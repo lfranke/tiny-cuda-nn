@@ -68,13 +68,26 @@ set(CUDA_LINK_LIBRARIES_KEYWORD PUBLIC)
 get_directory_property(TCNN_HAS_PARENT PARENT_DIRECTORY)
 
 # adapted from https://stackoverflow.com/a/69353718
-include(FindCUDA/select_compute_arch)
-CUDA_DETECT_INSTALLED_GPUS(INSTALLED_GPU_CCS_1)
-string(STRIP "${INSTALLED_GPU_CCS_1}" INSTALLED_GPU_CCS_2)
-string(REPLACE " " ";" INSTALLED_GPU_CCS_3 "${INSTALLED_GPU_CCS_2}")
-string(REPLACE "." "" CUDA_ARCH_LIST "${INSTALLED_GPU_CCS_3}")
-set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_LIST})
+#include(FindCUDA/select_compute_arch)
+#CUDA_DETECT_INSTALLED_GPUS(INSTALLED_GPU_CCS_1)
+#string(STRIP "${INSTALLED_GPU_CCS_1}" INSTALLED_GPU_CCS_2)
+#string(REPLACE " " ";" INSTALLED_GPU_CCS_3 "${INSTALLED_GPU_CCS_2}")
+#string(REPLACE "." "" CUDA_ARCH_LIST "${INSTALLED_GPU_CCS_3}")
+#set(CMAKE_CUDA_ARCHITECTURES ${CUDA_ARCH_LIST})
 
+#include(select_compute_arch)
+#if (SAIGA_CUDA_ARCH)
+#	message(STATUS "Using user defined CUDA Arch: " "${SAIGA_CUDA_ARCH}")
+#	CUDA_SELECT_NVCC_ARCH_FLAGS(SAIGA_CUDA_ARCH_FLAGS ${SAIGA_CUDA_ARCH})
+#else ()
+#	message(STATUS "Using automatic CUDA Arch detection...")
+#	CUDA_SELECT_NVCC_ARCH_FLAGS(SAIGA_CUDA_ARCH_FLAGS Auto)
+#endif ()
+#message(STATUS "SAIGA_CUDA_ARCH_FLAGS: ${SAIGA_CUDA_ARCH_FLAGS}")
+#
+#message(FATAL_ERROR sdf)
+
+set(CMAKE_CUDA_ARCHITECTURES "52")
 # Remove unsupported architectures
 list(REMOVE_ITEM CMAKE_CUDA_ARCHITECTURES "86+PTX")
 
@@ -135,15 +148,13 @@ list(APPEND CUDA_NVCC_FLAGS "--expt-relaxed-constexpr")
 # Include files
 ###############################################################################
 
-if (MSVC)
-else()
-	set(CUDA_TOOLKIT_ROOT_DIR /opt/cuda/targets/x86_64-linux)
-endif()
-find_library(
-	CUDA_CUBLASLT_LIBRARY cublasLt
-	${CUDA_TOOLKIT_ROOT_DIR}/lib64
-	${CUDA_TOOLKIT_ROOT_DIR}/lib
-)
+find_package(CUDAToolkit)
+
+#find_library(
+#	CUDA_CUBLASLT_LIBRARY cublasLt
+#	${CUDA_TOOLKIT_ROOT_DIR}/lib64
+#	${CUDA_TOOLKIT_ROOT_DIR}/lib
+#)
 include_directories("include")
 include_directories("dependencies")
 include_directories("dependencies/cutlass/include")

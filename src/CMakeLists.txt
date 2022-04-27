@@ -45,6 +45,6 @@ endif()
 # Linker / library
 ###############################################################################
 
-add_library(tiny-cuda-nn STATIC ${SOURCES})
-target_link_libraries(tiny-cuda-nn PUBLIC ${CUDA_LIBRARIES} cuda cublas)
+add_library(tiny-cuda-nn SHARED ${SOURCES})
+target_link_libraries(tiny-cuda-nn PRIVATE ${CUDA_LIBRARIES} CUDA::cudart CUDA::cuda_driver)
 target_compile_options(tiny-cuda-nn PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:${CUDA_NVCC_FLAGS}>)
