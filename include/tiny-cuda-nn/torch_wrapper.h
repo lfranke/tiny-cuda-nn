@@ -40,6 +40,8 @@
 #define STRINGIFY(x) #x
 #define STR(x) STRINGIFY(x)
 #define FILE_LINE __FILE__ ":" STR(__LINE__)
+#define CHECK_THROW(x) \
+	do { if (!(x)) throw std::runtime_error(std::string(FILE_LINE " check failed " #x)); } while(0)
 
 c10::ScalarType torch_type(tcnn::cpp::EPrecision precision)
 {
@@ -269,7 +271,7 @@ class TorchTcnnWrapperModule
 class TnnInfo : public torch::CustomClassHolder
 {
    public:
-    TorchTcnnWrapperModule* module;
+    TorchTcnnWrapperModule* module = nullptr;
     tcnn::cpp::Context native_ctx;
 };
 
@@ -287,6 +289,7 @@ struct _moduleFunction : public Function<_moduleFunction>
         ctx->set_materialize_grads(false);
 
         TnnInfo* info             = native_tcnn_module.toCustomClass<TnnInfo>().get();
+        CHECK_NOTNULL(info->module);
         auto [native_ctx, output] = info->module->fwd(input, params);
 
         variable_list to_save;
@@ -315,6 +318,7 @@ struct _moduleFunction : public Function<_moduleFunction>
         auto output        = saved_tensors[2];
 
         TnnInfo* info    = ctx->saved_data["native_tcnn_module"].toCustomClass<TnnInfo>().get();
+        CHECK_NOTNULL(info->module);
         float loss_scale = ctx->saved_data["loss_scale"].toDouble();
 
 
@@ -357,8 +361,7 @@ class TcnnTorchModuleImpl : public torch::nn::Module
     torch::Tensor forward(torch::Tensor x)
     {
         auto info_unq = std::make_unique<TnnInfo>();
-        TnnInfo info;
-        info.module = &module;
+        info_unq->module = &module;
         c10::intrusive_ptr<TnnInfo> info_ptr(std::move(info_unq));
         torch::IValue val(std::move(info_ptr));
         std::vector<torch::Tensor> result = torch::autograd::_moduleFunction::apply(val, x, params, loss_scale);
