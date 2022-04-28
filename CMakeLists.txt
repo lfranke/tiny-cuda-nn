@@ -87,7 +87,12 @@ get_directory_property(TCNN_HAS_PARENT PARENT_DIRECTORY)
 #
 #message(FATAL_ERROR sdf)
 
-set(CMAKE_CUDA_ARCHITECTURES "52")
+
+set(TCNN_CUDA_ARCH "15" CACHE STRING "The CUDA Arch")
+
+message(STATUS "TCNN_CUDA_ARCH ${TCNN_CUDA_ARCH}")
+
+set(CMAKE_CUDA_ARCHITECTURES ${TCNN_CUDA_ARCH})
 # Remove unsupported architectures
 list(REMOVE_ITEM CMAKE_CUDA_ARCHITECTURES "86+PTX")
 
@@ -129,10 +134,10 @@ if (CUDA_VERSION VERSION_GREATER_EQUAL 11.0)
 	list(APPEND TCNN_DEFINITIONS -DTCNN_SHAMPOO)
 endif()
 
-add_definitions(${TCNN_DEFINITIONS})
-if (TCNN_HAS_PARENT)
-	set(TCNN_DEFINITIONS ${TCNN_DEFINITIONS} PARENT_SCOPE)
-endif()
+#add_definitions(${TCNN_DEFINITIONS})
+#if (TCNN_HAS_PARENT)
+#	set(TCNN_DEFINITIONS ${TCNN_DEFINITIONS} PARENT_SCOPE)
+#endif()
 
 if (MSVC)
 else()
@@ -155,10 +160,7 @@ find_package(CUDAToolkit)
 #	${CUDA_TOOLKIT_ROOT_DIR}/lib64
 #	${CUDA_TOOLKIT_ROOT_DIR}/lib
 #)
-include_directories("include")
-include_directories("dependencies")
-include_directories("dependencies/cutlass/include")
-include_directories("dependencies/cutlass/tools/util/include")
+
 
 
 ###############################################################################
@@ -171,6 +173,15 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_MINSIZEREL ${CMAKE_BINARY_DIR})
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_BINARY_DIR})
 
 add_subdirectory("src")
+
+target_include_directories(tiny-cuda-nn PUBLIC "include")
+target_include_directories(tiny-cuda-nn PUBLIC "dependencies")
+target_include_directories(tiny-cuda-nn PUBLIC "dependencies/cutlass/include")
+target_include_directories(tiny-cuda-nn PUBLIC "dependencies/cutlass/tools/util/include")
+
+target_compile_definitions(tiny-cuda-nn PUBLIC ${TCNN_DEFINITIONS})
+
+message(STATUS "TCNN_DEFINITIONS: ${TCNN_DEFINITIONS}" )
 
 if (TCNN_BUILD_EXAMPLES)
 	add_subdirectory("samples")

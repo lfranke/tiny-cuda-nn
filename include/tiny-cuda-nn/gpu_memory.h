@@ -146,7 +146,7 @@ public:
 				free_memory();
 				m_size = 0;
 			}
-		} catch (std::runtime_error error) {
+		} catch (std::runtime_error& error) {
 			// Don't need to report on memory-free problems when the driver is shutting down.
 			if (std::string{error.what()}.find("driver shutting down") == std::string::npos) {
 				fprintf(stderr, "Could not free memory: %s\n", error.what());
@@ -164,7 +164,7 @@ public:
 			if (m_size) {
 				try {
 					free_memory();
-				} catch (std::runtime_error error) {
+				} catch (std::runtime_error& error) {
 					throw std::runtime_error(std::string("Could not free memory: ") + error.what());
 				}
 			}
@@ -172,7 +172,7 @@ public:
 			if (size > 0) {
 				try {
 					allocate_memory(size * sizeof(T));
-				} catch (std::runtime_error error) {
+				} catch (std::runtime_error& error) {
 					throw std::runtime_error(std::string("Could not allocate memory: ") + error.what());
 				}
 			}
@@ -200,7 +200,7 @@ public:
 
 		try {
 			CUDA_CHECK_THROW(cudaMemset(m_data + offset, value, num_elements * sizeof(T)));
-		} catch (std::runtime_error error) {
+		} catch (std::runtime_error& error) {
 			throw std::runtime_error(std::string("Could not set memory: ") + error.what());
 		}
 	}
@@ -218,7 +218,7 @@ public:
 	void copy_from_host(const T* host_data, const size_t num_elements) {
 		try {
 			CUDA_CHECK_THROW(cudaMemcpy(data(), host_data, num_elements * sizeof(T), cudaMemcpyHostToDevice));
-		} catch (std::runtime_error error) {
+		} catch (std::runtime_error& error) {
 			throw std::runtime_error(std::string("Could not copy from host: ") + error.what());
 		}
 	}
@@ -283,7 +283,7 @@ public:
 		}
 		try {
 			CUDA_CHECK_THROW(cudaMemcpy(host_data, data(), num_elements * sizeof(T), cudaMemcpyDeviceToHost));
-		} catch (std::runtime_error error) {
+		} catch (std::runtime_error& error) {
 			throw std::runtime_error(std::string("Could not copy to host: ") + error.what());
 		}
 	}
@@ -321,7 +321,7 @@ public:
 
 		try {
 			CUDA_CHECK_THROW(cudaMemcpy(m_data, other.m_data, size * sizeof(T), cudaMemcpyDeviceToDevice));
-		} catch (std::runtime_error error) {
+		} catch (std::runtime_error& error) {
 			throw std::runtime_error(std::string("Could not copy from device: ") + error.what());
 		}
 	}
@@ -464,7 +464,7 @@ public:
 
 				CU_CHECK_THROW(cuMemAddressFree(m_base_address, m_max_size));
 			}
-		} catch (std::runtime_error error) {
+		} catch (std::runtime_error& error) {
 			// Don't need to report on memory-free problems when the driver is shutting down.
 			if (std::string{error.what()}.find("driver shutting down") == std::string::npos) {
 				fprintf(stderr, "Could not free memory: %s\n", error.what());
@@ -678,7 +678,7 @@ inline GPUMemoryArena::Allocation allocate_workspace(cudaStream_t stream, size_t
 	return GPUMemoryArena::Allocation{stream, arena.allocate(n_bytes), &arena};
 }
 
-static size_t align_to_cacheline(size_t bytes) {
+inline size_t align_to_cacheline(size_t bytes) {
 	return next_multiple(bytes, (size_t)128);
 }
 

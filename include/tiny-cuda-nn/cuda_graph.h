@@ -55,7 +55,7 @@ public:
 	~CudaGraph() {
 		try {
 			reset();
-		} catch (std::runtime_error error) {
+		} catch (std::runtime_error& error) {
 			// Don't need to report on destruction problems when the driver is shutting down.
 			if (std::string{error.what()}.find("driver shutting down") == std::string::npos) {
 				fprintf(stderr, "Could not destroy cuda graph: %s\n", error.what());

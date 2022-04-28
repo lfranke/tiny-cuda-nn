@@ -411,4 +411,5 @@ void CutlassMLP<T>::initialize_params(pcg32& rnd, float* params_full_precision, 
 // Explicitly instantiate CutlassMLP classes.
 template class CutlassMLP<network_precision_t>;
 
+
 TCNN_NAMESPACE_END
