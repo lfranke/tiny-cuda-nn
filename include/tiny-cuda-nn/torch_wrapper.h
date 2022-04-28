@@ -70,7 +70,7 @@ void* void_data_ptr(torch::Tensor& tensor)
 class TorchTcnnWrapperModule
 {
    public:
-    TorchTcnnWrapperModule(){}
+    TorchTcnnWrapperModule() {}
     TorchTcnnWrapperModule(tcnn::cpp::Module* module) : m_module{module} {}
 
     std::tuple<tcnn::cpp::Context, torch::Tensor> fwd(torch::Tensor input, torch::Tensor params)
@@ -344,12 +344,31 @@ struct _moduleFunction : public Function<_moduleFunction>
 }  // namespace torch::autograd
 
 
-class TcnnTorchModuleImpl : public torch::nn::Module{
-    TcnnTorchModuleImpl(int seed=1337){
+class TcnnTorchModuleImpl : public torch::nn::Module
+{
+   public:
+    TcnnTorchModuleImpl(TorchTcnnWrapperModule _module, int seed = 1337) : module(std::move(_module))
+    {
+        auto initial_params = module.initial_params(seed);
+        params              = initial_params;
+        register_parameter("params", params);
+    }
 
+    torch::Tensor forward(torch::Tensor x)
+    {
+        auto info_unq = std::make_unique<TnnInfo>();
+        TnnInfo info;
+        info.module = &module;
+        c10::intrusive_ptr<TnnInfo> info_ptr(std::move(info_unq));
+        torch::IValue val(std::move(info_ptr));
+        std::vector<torch::Tensor> result = torch::autograd::_moduleFunction::apply(val, x, params, loss_scale);
+        CHECK_EQ(result.size(),1);
+        return result.front();
     }
 
     TorchTcnnWrapperModule module;
+    torch::Tensor params;
+    float loss_scale;
 };
 
 
