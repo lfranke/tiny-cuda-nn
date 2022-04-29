@@ -43,7 +43,7 @@
 #define CHECK_THROW(x) \
 	do { if (!(x)) throw std::runtime_error(std::string(FILE_LINE " check failed " #x)); } while(0)
 
-c10::ScalarType torch_type(tcnn::cpp::EPrecision precision)
+inline c10::ScalarType torch_type(tcnn::cpp::EPrecision precision)
 {
     switch (precision)
     {
@@ -56,7 +56,7 @@ c10::ScalarType torch_type(tcnn::cpp::EPrecision precision)
     }
 }
 
-void* void_data_ptr(torch::Tensor& tensor)
+inline void* void_data_ptr(torch::Tensor& tensor)
 {
     switch (tensor.scalar_type())
     {
@@ -227,7 +227,7 @@ class TorchTcnnWrapperModule
         torch::Tensor output =
             torch::zeros({n_params()}, torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA));
         m_module->initialize_params(seed, output.data_ptr<float>());
-        return output;
+        return output.to(c10_param_precision());
     }
 
     uint32_t n_input_dims() const { return m_module->n_input_dims(); }

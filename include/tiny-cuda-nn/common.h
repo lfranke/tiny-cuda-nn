@@ -68,7 +68,7 @@ static constexpr uint32_t MIN_GPU_ARCH = TCNN_MIN_GPU_ARCH;
 
 // Optionally: set the precision to `float` to disable tensor cores and debug potential
 //             problems with mixed-precision training.
- using network_precision_t = float;
+ using network_precision_t = __half;
 
 // #define TCNN_VERBOSE_MEMORY_ALLOCS
 
