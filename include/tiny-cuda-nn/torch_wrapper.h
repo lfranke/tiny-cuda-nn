@@ -371,7 +371,7 @@ class TcnnTorchModuleImpl : public torch::nn::Module
 
     TorchTcnnWrapperModule module;
     torch::Tensor params;
-    float loss_scale;
+    float loss_scale = 1;
 };
 
 
