@@ -319,22 +319,24 @@ struct _moduleFunction : public Function<_moduleFunction>
 
         TnnInfo* info    = ctx->saved_data["native_tcnn_module"].toCustomClass<TnnInfo>().get();
         CHECK_NOTNULL(info->module);
-        float loss_scale = ctx->saved_data["loss_scale"].toDouble();
 
 
         {
             torch::NoGradGuard ngg;
-            auto scaled_grad               = doutput * loss_scale;
+
+            // float loss_scale = ctx->saved_data["loss_scale"].toDouble();
+            // auto scaled_grad               = doutput * loss_scale;
+            auto scaled_grad = doutput;
             auto [input_grad, weight_grad] = info->module->bwd(info->native_ctx, input, params, output, scaled_grad);
 
-            if (input_grad.defined())
-            {
-                input_grad = input_grad / loss_scale;
-            }
-            if (weight_grad.defined())
-            {
-                weight_grad = weight_grad / loss_scale;
-            }
+            // if (input_grad.defined())
+            // {
+            //     input_grad = input_grad / loss_scale;
+            // }
+            // if (weight_grad.defined())
+            // {
+            //     weight_grad = weight_grad / loss_scale;
+            // }
 
             std::vector<torch::Tensor> output_vec;
             output_vec.push_back({});
