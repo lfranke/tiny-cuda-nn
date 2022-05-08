@@ -43,6 +43,7 @@ public:
 	virtual ~Optimizer() {}
 
 	virtual void allocate(std::shared_ptr<ParametricObject<T>> target) = 0;
+        virtual void allocate2(int size) { throw std::runtime_error("not implemented"); }
 	virtual void step(cudaStream_t stream, float loss_scale, float* weights_full_precision, T* weights, const T* gradients) = 0;
 	virtual float learning_rate() const = 0;
 	virtual void set_learning_rate(float val) = 0;
