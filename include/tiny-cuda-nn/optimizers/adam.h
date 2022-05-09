@@ -306,7 +306,8 @@ class AdamOptimizer : public Optimizer<T>
         m_base_learning_rate = data["base_learning_rate"];
     }
 
-   private:
+    // make it public so we can
+   public:
     uint32_t m_n_weights;
     uint32_t m_n_weights_covered_by_matrices;
 
