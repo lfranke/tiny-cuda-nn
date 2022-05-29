@@ -113,12 +113,9 @@ __host__ __device__ void warp_activation(Activation activation, const fragment_t
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
             {
-                float beta = SOFTPLUS_BETA;
-                 result.x[t] = (T)(logf(expf((float)frag.x[t] * beta) + 1.0f) / beta);
-
-
-                T lin_result  = (T)frag.x[t];
-                if(frag.x[t] > (T)SOFTPLUS_THRESHOLD)
+                float beta  = SOFTPLUS_BETA;
+                result.x[t] = (T)(logf(expf((float)frag.x[t] * beta) + 1.0f) / beta);
+                if (frag.x[t] > (T)SOFTPLUS_THRESHOLD)
                 {
                     result.x[t] = frag.x[t];
                 }
@@ -190,11 +187,11 @@ __host__ __device__ void warp_activation_backward_in(Activation activation, cons
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
             {
-                float beta = K_ACT;
+                float beta  = K_ACT;
                 float tmp   = expf((float)frag.x[t] * beta);
                 result.x[t] = frag.x[t] * (T)(tmp / (tmp + 1));
 
-                if(forward_frag_in.x[t] > (T)SOFTPLUS_THRESHOLD)
+                if (forward_frag_in.x[t] > (T)SOFTPLUS_THRESHOLD)
                 {
                     result.x[t] = frag.x[t];
                 }
@@ -263,10 +260,10 @@ __host__ __device__ void warp_activation_backward(Activation activation, const f
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
             {
-                float beta = SOFTPLUS_BETA;
+                float beta  = SOFTPLUS_BETA;
                 result.x[t] = frag.x[t] * (T)(1.0f - expf(-(float)forward_frag.x[t] * beta));
 
-                if(forward_frag.x[t] > (T)SOFTPLUS_THRESHOLD)
+                if (forward_frag.x[t] > (T)SOFTPLUS_THRESHOLD)
                 {
                     result.x[t] = frag.x[t];
                 }
