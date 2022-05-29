@@ -120,10 +120,6 @@ class AdamOptimizer : public Optimizer<T>
     virtual void allocate2(int size) override
     {
         m_n_weights                     = size;
-        if (m_n_weights <= m_first_moments.size())
-        {
-            return;
-        }
 
         m_first_moments.resize(size);
         m_first_moments.memset(0);
@@ -308,8 +304,8 @@ class AdamOptimizer : public Optimizer<T>
 
     // make it public so we can
    public:
-    uint32_t m_n_weights;
-    uint32_t m_n_weights_covered_by_matrices;
+    uint32_t m_n_weights = 0;
+    uint32_t m_n_weights_covered_by_matrices = 0;
 
     GPUMemory<float> m_first_moments;
     GPUMemory<float> m_second_moments;
