@@ -31,6 +31,9 @@
 
 #pragma once
 
+#undef NDEBUG
+#define DEBUG
+
 #include <json/json.hpp>
 #include <stdexcept>
 #include <stdint.h>
@@ -83,6 +86,8 @@ __global__ void adam_step(const uint32_t n_elements, const uint32_t n_matrix_wei
     }
 
     const float gradient_sq = gradient * gradient;
+    assert(isfinite(gradient));
+    assert(isfinite(gradient_sq));
 
     float first_moment = first_moments[i] = beta1 * first_moments[i] + (1 - beta1) * gradient;
     const float second_moment = second_moments[i] = beta2 * second_moments[i] + (1 - beta2) * gradient_sq;
@@ -96,14 +101,17 @@ __global__ void adam_step(const uint32_t n_elements, const uint32_t n_matrix_wei
     // Debiasing. Since some parameters might see fewer steps than others, they each need their own step counter.
     const uint32_t current_step = ++param_steps[i];
     learning_rate *= sqrtf(1 - powf(beta2, (float)current_step)) / (1 - powf(beta1, (float)current_step));
+    assert(isfinite(learning_rate));
 
     // Follow AdaBound paradigm
     const float effective_learning_rate =
         fminf(fmaxf(learning_rate / (sqrtf(second_moment) + epsilon), lower_lr_bound), upper_lr_bound);
+    assert(isfinite(effective_learning_rate));
 
     const float decayed_weight =
         weight_decay(relative_weight_decay * learning_rate, absolute_weight_decay * learning_rate, weight_fp);
     const float new_weight = decayed_weight - effective_learning_rate * first_moment;
+    assert(isfinite(new_weight));
 
     weights_full_precision[i] = new_weight;
     weights[i]                = (T)new_weight;
