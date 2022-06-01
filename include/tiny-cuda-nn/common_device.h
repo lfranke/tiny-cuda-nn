@@ -31,6 +31,9 @@
 
 #pragma once
 
+#undef NDEBUG
+#define DEBUG
+
 #include <tiny-cuda-nn/common.h>
 
 #define _USE_MATH_DEFINES
@@ -113,11 +116,23 @@ __host__ __device__ void warp_activation(Activation activation, const fragment_t
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
             {
+                float x = (float)frag.x[t];
+                assert(isfinite(x));
                 float beta  = SOFTPLUS_BETA;
-                result.x[t] = (T)(logf(expf((float)frag.x[t] * beta) + 1.0f) / beta);
-                if (frag.x[t] > (T)SOFTPLUS_THRESHOLD)
+                result.x[t] = (T)(logf(expf(x * beta) + 1.0f) / beta);
+                if (x > SOFTPLUS_THRESHOLD)
                 {
-                    result.x[t] = frag.x[t];
+                    result.x[t] = (T)x;
+                }
+                if (!isfinite((float)frag.x[t]))
+                {
+                    printf("\nisfinite frag (%f %f)\n", (float)frag.x[t], x);
+                    assert(false);
+                }
+                if (!isfinite((float)result.x[t]))
+                {
+                    printf("\nisfinite result (%f %f %f)\n", (float)frag.x[t], x, (float)result.x[t]);
+                    assert(false);
                 }
             }
             return;
@@ -188,13 +203,15 @@ __host__ __device__ void warp_activation_backward_in(Activation activation, cons
             for (int t = 0; t < result.num_elements; t++)
             {
                 float beta  = K_ACT;
+                float x     = (float)forward_frag_in.x[t];
                 float tmp   = expf((float)frag.x[t] * beta);
                 result.x[t] = frag.x[t] * (T)(tmp / (tmp + 1));
 
-                if (forward_frag_in.x[t] > (T)SOFTPLUS_THRESHOLD)
+                if (x > SOFTPLUS_THRESHOLD)
                 {
                     result.x[t] = frag.x[t];
                 }
+                assert(isfinite((float)result.x[t]));
             }
             return;
         case Activation::None:
@@ -260,13 +277,17 @@ __host__ __device__ void warp_activation_backward(Activation activation, const f
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
             {
-                float beta  = SOFTPLUS_BETA;
-                result.x[t] = frag.x[t] * (T)(1.0f - expf(-(float)forward_frag.x[t] * beta));
+                assert(isfinite((float)frag.x[t]));
+                assert(isfinite((float)forward_frag.x[t]));
+                float beta        = SOFTPLUS_BETA;
+                float x_after_act = (float)forward_frag.x[t];
+                result.x[t]       = frag.x[t] * (T)(1.0f - expf(-x_after_act * beta));
 
-                if (forward_frag.x[t] > (T)SOFTPLUS_THRESHOLD)
+                if (x_after_act > SOFTPLUS_THRESHOLD)
                 {
                     result.x[t] = frag.x[t];
                 }
+                assert(isfinite((float)result.x[t]));
             }
             return;
         case Activation::None:
