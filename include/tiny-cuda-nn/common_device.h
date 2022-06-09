@@ -116,23 +116,16 @@ __host__ __device__ void warp_activation(Activation activation, const fragment_t
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
             {
-                float x = (float)frag.x[t];
-                assert(isfinite(x));
-                float beta  = SOFTPLUS_BETA;
-                result.x[t] = (T)(logf(expf(x * beta) + 1.0f) / beta);
+                float x    = (float)frag.x[t];
+                float beta = SOFTPLUS_BETA;
+
                 if (x > SOFTPLUS_THRESHOLD)
                 {
                     result.x[t] = (T)x;
                 }
-                if (!isfinite((float)frag.x[t]))
+                else
                 {
-                    printf("\nisfinite frag (%f %f)\n", (float)frag.x[t], x);
-                    assert(false);
-                }
-                if (!isfinite((float)result.x[t]))
-                {
-                    printf("\nisfinite result (%f %f %f)\n", (float)frag.x[t], x, (float)result.x[t]);
-                    assert(false);
+                    result.x[t] = (T)(logf(expf(x * beta) + 1.0f) / beta);
                 }
             }
             return;
@@ -277,17 +270,16 @@ __host__ __device__ void warp_activation_backward(Activation activation, const f
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
             {
-                assert(isfinite((float)frag.x[t]));
-                assert(isfinite((float)forward_frag.x[t]));
                 float beta        = SOFTPLUS_BETA;
                 float x_after_act = (float)forward_frag.x[t];
-                result.x[t]       = frag.x[t] * (T)(1.0f - expf(-x_after_act * beta));
-
                 if (x_after_act > SOFTPLUS_THRESHOLD)
                 {
                     result.x[t] = frag.x[t];
                 }
-                assert(isfinite((float)result.x[t]));
+                else
+                {
+                    result.x[t] = frag.x[t] * (T)(1.0f - expf(-x_after_act * beta));
+                }
             }
             return;
         case Activation::None:
