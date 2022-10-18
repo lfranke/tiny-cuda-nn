@@ -68,7 +68,7 @@ struct VectorFragment
 };
 
 static constexpr float K_ACT              = 10.0f;
-static constexpr float SOFTPLUS_BETA      = 4.f;
+static constexpr float SOFTPLUS_BETA      = 2.f;
 static constexpr float SOFTPLUS_THRESHOLD = 20.f / SOFTPLUS_BETA;
 
 template <typename T, typename fragment_t>
