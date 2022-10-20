@@ -731,7 +731,8 @@ void FullyFusedMLP<T, WIDTH>::inference_mixed_precision_impl(cudaStream_t stream
 		case Activation::Sigmoid:     mlp_fused_forward<WIDTH, T, Activation::Sigmoid, true>(    stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
 		case Activation::ReLU:        mlp_fused_forward<WIDTH, T, Activation::ReLU, true>(       stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
 		case Activation::Squareplus:  mlp_fused_forward<WIDTH, T, Activation::Squareplus, true>( stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
-		case Activation::Softplus:    mlp_fused_forward<WIDTH, T, Activation::Softplus, true>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+		case Activation::Softplus2:    mlp_fused_forward<WIDTH, T, Activation::Softplus2, true>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+                case Activation::Softplus4:    mlp_fused_forward<WIDTH, T, Activation::Softplus4, true>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
 		default: throw std::runtime_error{"Unsupported activation."};
 	}
 
@@ -757,7 +758,8 @@ std::unique_ptr<Context> FullyFusedMLP<T, WIDTH>::forward_impl(cudaStream_t stre
 		case Activation::Sigmoid:     mlp_fused_forward<WIDTH, T, Activation::Sigmoid, false>(    stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
 		case Activation::ReLU:        mlp_fused_forward<WIDTH, T, Activation::ReLU, false>(       stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
 		case Activation::Squareplus:  mlp_fused_forward<WIDTH, T, Activation::Squareplus, false>( stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
-		case Activation::Softplus:    mlp_fused_forward<WIDTH, T, Activation::Softplus, false>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+		case Activation::Softplus2:    mlp_fused_forward<WIDTH, T, Activation::Softplus2, false>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+                case Activation::Softplus4:    mlp_fused_forward<WIDTH, T, Activation::Softplus4, false>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
 		default: throw std::runtime_error{"Unsupported activation."};
 	}
 
@@ -844,7 +846,8 @@ void FullyFusedMLP<T, WIDTH>::backward_impl(
 			case Activation::Sigmoid:     mlp_fused_backward<WIDTH, T, Activation::Sigmoid>(    stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
 			case Activation::ReLU:        mlp_fused_backward<WIDTH, T, Activation::ReLU>(       stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
 			case Activation::Squareplus:  mlp_fused_backward<WIDTH, T, Activation::Squareplus>( stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
-			case Activation::Softplus:    mlp_fused_backward<WIDTH, T, Activation::Softplus>(   stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+			case Activation::Softplus2:    mlp_fused_backward<WIDTH, T, Activation::Softplus2>(   stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+                        case Activation::Softplus4:    mlp_fused_backward<WIDTH, T, Activation::Softplus4>(   stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
 			default: throw std::runtime_error{"Unsupported activation."};
 		}
 
