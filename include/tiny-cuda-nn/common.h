@@ -80,6 +80,7 @@ enum class Activation {
 	Squareplus,
 	Softplus2,
      Softplus4,
+     Softplus4Minus,
 	None,
 };
 
