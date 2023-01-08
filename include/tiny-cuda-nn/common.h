@@ -81,6 +81,8 @@ enum class Activation {
 	Softplus2,
      Softplus4,
      Softplus4Minus,
+     ClampedSoftplus2,
+     ClampedSoftplus4,
 	None,
 };
 

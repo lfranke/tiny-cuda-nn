@@ -67,6 +67,8 @@ struct VectorFragment
     V x;
 };
 
+static constexpr float clamp_value = 0.02f;
+
 static constexpr float K_ACT               = 10.0f;
 static constexpr float SOFTPLUS_BETA2      = 2.f;
 static constexpr float SOFTPLUS_THRESHOLD2 = 20.f / SOFTPLUS_BETA2;
@@ -117,6 +119,7 @@ __host__ __device__ void warp_activation(Activation activation, const fragment_t
             }
             return;
         case Activation::Softplus2:
+        case Activation::ClampedSoftplus2:
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
             {
@@ -133,6 +136,7 @@ __host__ __device__ void warp_activation(Activation activation, const fragment_t
                 }
             }
             return;
+        case Activation::ClampedSoftplus4:
         case Activation::Softplus4:
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
@@ -245,6 +249,24 @@ __host__ __device__ void warp_activation_backward_in(Activation activation, cons
                 assert(isfinite((float)result.x[t]));
             }
             return;
+        case Activation::ClampedSoftplus2:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                float beta  = SOFTPLUS_BETA2;
+                float x     = (float)forward_frag_in.x[t];
+                float tmp   = expf((float)frag.x[t] * beta);
+                float J     = (tmp / (tmp + 1));
+                J           = max(J, clamp_value);
+                result.x[t] = frag.x[t] * (T)J;
+
+                if (x > SOFTPLUS_THRESHOLD2)
+                {
+                    result.x[t] = frag.x[t];
+                }
+                assert(isfinite((float)result.x[t]));
+            }
+            return;
         case Activation::Softplus4:
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
@@ -253,6 +275,24 @@ __host__ __device__ void warp_activation_backward_in(Activation activation, cons
                 float x     = (float)forward_frag_in.x[t];
                 float tmp   = expf((float)frag.x[t] * beta);
                 result.x[t] = frag.x[t] * (T)(tmp / (tmp + 1));
+
+                if (x > SOFTPLUS_THRESHOLD4)
+                {
+                    result.x[t] = frag.x[t];
+                }
+                assert(isfinite((float)result.x[t]));
+            }
+            return;
+        case Activation::ClampedSoftplus4:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                float beta  = SOFTPLUS_BETA4;
+                float x     = (float)forward_frag_in.x[t];
+                float tmp   = expf((float)frag.x[t] * beta);
+                float J     = (tmp / (tmp + 1));
+                J           = max(J, clamp_value);
+                result.x[t] = frag.x[t] * (T)J;
 
                 if (x > SOFTPLUS_THRESHOLD4)
                 {
@@ -365,6 +405,42 @@ __host__ __device__ void warp_activation_backward(Activation activation, const f
                 else
                 {
                     result.x[t] = frag.x[t] * (T)(1.0f - expf(-x_after_act * beta));
+                }
+            }
+            return;
+        case Activation::ClampedSoftplus2:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                float beta        = SOFTPLUS_BETA2;
+                float x_after_act = (float)forward_frag.x[t];
+                if (x_after_act > SOFTPLUS_THRESHOLD2)
+                {
+                    result.x[t] = frag.x[t];
+                }
+                else
+                {
+                    float J     = (1.0f - expf(-x_after_act * beta));
+                    J           = max(J, clamp_value);
+                    result.x[t] = frag.x[t] * (T)J;
+                }
+            }
+            return;
+        case Activation::ClampedSoftplus4:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                float beta        = SOFTPLUS_BETA4;
+                float x_after_act = (float)forward_frag.x[t];
+                if (x_after_act > SOFTPLUS_THRESHOLD4)
+                {
+                    result.x[t] = frag.x[t];
+                }
+                else
+                {
+                    float J     = (1.0f - expf(-x_after_act * beta));
+                    J           = max(J, clamp_value);
+                    result.x[t] = frag.x[t] * (T)J;
                 }
             }
             return;

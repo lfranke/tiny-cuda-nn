@@ -56,6 +56,10 @@ Activation string_to_activation(const std::string& activation_name) {
 		return Activation::Softplus2;
 	}else if (equals_case_insensitive(activation_name, "Softplus4")) {
             return Activation::Softplus4;
+        } else if (equals_case_insensitive(activation_name, "ClampedSoftplus2")) {
+            return Activation::ClampedSoftplus2;
+        }else if (equals_case_insensitive(activation_name, "ClampedSoftplus4")) {
+            return Activation::ClampedSoftplus4;
         }else if (equals_case_insensitive(activation_name, "Softplus4Minus")) {
             return Activation::Softplus4Minus;
         }
@@ -73,6 +77,8 @@ std::string to_string(Activation activation) {
 		case Activation::Squareplus: return "Squareplus";
 		case Activation::Softplus2: return "Softplus2";
                 case Activation::Softplus4: return "Softplus4";
+                case Activation::ClampedSoftplus2: return "ClampedSoftplus2";
+                case Activation::ClampedSoftplus4: return "ClampedSoftplus4";
                 case Activation::Softplus4Minus: return "Softplus4Minus";
 		default: throw std::runtime_error{std::string{"Invalid activation"}};
 	}
