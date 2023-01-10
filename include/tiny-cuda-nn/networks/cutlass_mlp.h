@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   cutlass_mlp.h
@@ -51,7 +50,6 @@ public:
 		uint32_t input_width, uint32_t network_width, uint32_t output_width, uint32_t n_hidden_layers,
 		Activation activation, Activation output_activation
 	);
-	~CutlassMLP() override;
 
 	void inference_mixed_precision_impl(cudaStream_t stream, const GPUMatrixDynamic<T>& input, GPUMatrixDynamic<T>& output, bool use_inference_params = true) override;
 
@@ -68,8 +66,8 @@ public:
 		EGradientMode param_gradients_mode = EGradientMode::Overwrite
 	) override;
 
-	void set_params(T* params, T* inference_params, T* backward_params, T* gradients) override;
-	void initialize_params(pcg32& rnd, float* params_full_precision, T* params, T* inference_params, T* backward_params, T* gradients, float scale = 1) override;
+	void set_params_impl(T* params, T* inference_params, T* gradients) override;
+	void initialize_params(pcg32& rnd, float* params_full_precision, float scale = 1) override;
 
 	GPUMatrix<T, RM>& input_weight_matrix(bool inference) {
 		auto& weight_matrices = inference ? m_weight_matrices_inference : m_weight_matrices;
@@ -114,8 +112,16 @@ public:
 		return m_output_width;
 	}
 
+	static uint32_t REQUIRED_ALIGNMENT() {
+		// Technically, CUTLASS only requires an alignment of 8, but
+		// this leads to incompatibility of checkpoints that were generated
+		// from different configurations of tiny-cuda-nn.
+		// return 8;
+		return 16;
+	}
+
 	uint32_t required_input_alignment() const override {
-		return tensorcore_width;
+		return REQUIRED_ALIGNMENT();
 	}
 
 	std::vector<std::pair<uint32_t, uint32_t>> layer_sizes() const override {
@@ -167,15 +173,6 @@ private:
 	Activation m_output_activation;
 
 	bool m_can_fuse_activation;
-
-	static const uint32_t tensorcore_width = 8;
-
-	// Streams and events
-	std::vector<cudaStream_t> m_training_splitk_streams;
-	std::vector<cudaEvent_t> m_training_splitk_events;
-
-	// Graphs
-	CudaGraph m_inference_graph;
 
 	// Storage of params
 	std::vector<GPUMatrix<T, RM>> m_weight_matrices;

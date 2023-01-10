@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   encoding.cu
@@ -49,7 +48,7 @@ InterpolationType string_to_interpolation_type(const std::string& interpolation_
 		return InterpolationType::Smoothstep;
 	}
 
-	throw std::runtime_error{std::string{"Invalid interpolation type: "} + interpolation_type};
+	throw std::runtime_error{fmt::format("Invalid interpolation type: {}", interpolation_type)};
 }
 
 std::string to_string(InterpolationType interpolation_type) {
@@ -57,7 +56,28 @@ std::string to_string(InterpolationType interpolation_type) {
 		case InterpolationType::Nearest: return "Nearest";
 		case InterpolationType::Linear: return "Linear";
 		case InterpolationType::Smoothstep: return "Smoothstep";
-		default: throw std::runtime_error{std::string{"Invalid interpolation type"}};
+		default: throw std::runtime_error{"Invalid interpolation type."};
+	}
+}
+
+ReductionType string_to_reduction_type(const std::string& reduction_type) {
+	if (equals_case_insensitive(reduction_type, "Concatenation")) {
+		return ReductionType::Concatenation;
+	} else if (equals_case_insensitive(reduction_type, "Sum")) {
+		return ReductionType::Sum;
+	} else if (equals_case_insensitive(reduction_type, "Product")) {
+		return ReductionType::Product;
+	}
+
+	throw std::runtime_error{fmt::format("Invalid reduction type: {}", reduction_type)};
+}
+
+std::string to_string(ReductionType reduction_type) {
+	switch (reduction_type) {
+		case ReductionType::Concatenation: return "Concatenation";
+		case ReductionType::Sum: return "Sum";
+		case ReductionType::Product: return "Product";
+		default: throw std::runtime_error{"Invalid reduction type."};
 	}
 }
 
@@ -125,7 +145,7 @@ Encoding<T>* create_encoding(uint32_t n_dims_to_encode, const json& encoding, ui
 	) {
 		result = create_grid_encoding<T>(n_dims_to_encode, encoding);
 	} else {
-		throw std::runtime_error{std::string{"Invalid encoding type: "} + encoding_type};
+		throw std::runtime_error{fmt::format("Invalid encoding type: {}", encoding_type)};
 	}
 
 	if (alignment > 0) {

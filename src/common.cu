@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   common.cu
@@ -29,11 +28,14 @@
  */
 
 #include <tiny-cuda-nn/common.h>
+#include <tiny-cuda-nn/gpu_memory.h>
+#include <tiny-cuda-nn/multi_stream.h>
 
 #include <cuda.h>
 
 #include <algorithm>
 #include <cctype>
+#include <unordered_map>
 
 TCNN_NAMESPACE_BEGIN
 
@@ -48,10 +50,26 @@ int cuda_device() {
 	return device;
 }
 
+void set_cuda_device(int device) {
+	CUDA_CHECK_THROW(cudaSetDevice(device));
+}
+
+int cuda_device_count() {
+	int device_count;
+	CUDA_CHECK_THROW(cudaGetDeviceCount(&device_count));
+	return device_count;
+}
+
 bool cuda_supports_virtual_memory(int device) {
 	int supports_vmm;
 	CU_CHECK_THROW(cuDeviceGetAttribute(&supports_vmm, CU_DEVICE_ATTRIBUTE_VIRTUAL_ADDRESS_MANAGEMENT_SUPPORTED, device));
 	return supports_vmm != 0;
+}
+
+std::string cuda_device_name(int device) {
+	cudaDeviceProp props;
+	CUDA_CHECK_THROW(cudaGetDeviceProperties(&props, device));
+	return props.name;
 }
 
 uint32_t cuda_compute_capability(int device) {
@@ -89,6 +107,16 @@ std::string to_lower(std::string str) {
 std::string to_upper(std::string str) {
 	std::transform(std::begin(str), std::end(str), std::begin(str), [](unsigned char c) { return (char)std::toupper(c); });
 	return str;
+}
+
+template <>
+std::string type_to_string<float>() {
+	return "float";
+}
+
+template <>
+std::string type_to_string<__half>() {
+	return "__half";
 }
 
 TCNN_NAMESPACE_END

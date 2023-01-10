@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   loss.cu
@@ -62,7 +61,7 @@ Loss<T>* create_loss(const json& loss) {
 	} else if (equals_case_insensitive(loss_type, "CrossEntropy")) {
 		return new CrossEntropyLoss<T>{};
 	} else {
-		throw std::runtime_error{std::string{"Invalid loss type: "} + loss_type};
+		throw std::runtime_error{fmt::format("Invalid loss type: {}", loss_type)};
 	}
 }
 

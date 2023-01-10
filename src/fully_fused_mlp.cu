@@ -31,8 +31,9 @@
 
 #include <tiny-cuda-nn/networks/fully_fused_mlp.h>
 
-#include <tiny-cuda-nn/cutlass_matmul.h>
 #include <tiny-cuda-nn/common_device.h>
+#include <tiny-cuda-nn/cutlass_matmul.h>
+#include <tiny-cuda-nn/multi_stream.h>
 
 #include <mma.h>
 
@@ -79,7 +80,7 @@ __device__ void threadblock_layer(Activation activation, __half* __restrict__ ac
 	__syncthreads();
 
 	// Load N_BLOCKS chunks of weights from global memory into registers.
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (uint32_t i = 0; i < N_BLOCKS; ++i) {
 		if (BACKWARD) {
 			// If we're performing the backward pass, additional index swizzling is needed to
@@ -90,11 +91,11 @@ __device__ void threadblock_layer(Activation activation, __half* __restrict__ ac
 		}
 	}
 
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (int l = 0; l < N_ITERS; ++l) {
 		wmma::fill_fragment(result_frag[l], 0.0f);
 
-		#pragma unroll
+		TCNN_PRAGMA_UNROLL
 		for (uint32_t i = 0; i < N_BLOCKS; ++i) {
 			// Load a chunk of intermediate activations from shared memory and multiply with chunk of weights
 			wmma::load_matrix_sync(act_frag, act_shmem + 16 * i + (16 * l) * (WIDTH + SKEW), WIDTH + SKEW);
@@ -113,7 +114,7 @@ __device__ void threadblock_layer(Activation activation, __half* __restrict__ ac
 
 	__syncthreads();
 
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (int l = 0; l < N_ITERS; ++l) {
 		wmma::store_matrix_sync(act_shmem + weights_col + l * 16 * (WIDTH + SKEW), result_frag[l], WIDTH + SKEW, wmma::mem_row_major);
 	}
@@ -121,7 +122,7 @@ __device__ void threadblock_layer(Activation activation, __half* __restrict__ ac
 	if (out_intermediate_threadblock_this_layer != nullptr) {
 		__syncthreads();
 
-		#pragma unroll
+		TCNN_PRAGMA_UNROLL
 		for (int l = 0; l < N_ITERS; ++l) {
 			*(int4*)&out_intermediate_threadblock_this_layer[lane_offset + (row + 16 * l) * WIDTH] = *(int4*)&act_shmem[lane_offset + (row + 16 * l) * (WIDTH + SKEW)];
 		}
@@ -141,7 +142,7 @@ __device__ void threadblock_load_input_static(__half* __restrict__ act_shmem, co
 	const uint32_t lane_offset = (8 * li) % WIDTH;
 	const uint32_t row = (8 * li + wi * 8 * 32) / WIDTH;
 
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (int i = 0; i < N_ITERS; ++i) {
 		*(int4*)&act_shmem[lane_offset + (row + 16 * i) * (WIDTH + SKEW)] = *(int4*)&input_threadblock[lane_offset + (row + 16 * i) * WIDTH];
 	}
@@ -202,7 +203,7 @@ __global__ void kernel_mlp_fused_backward(
 
 		wmma::load_matrix_sync(weights_frag, weights + weights_stride * n_hidden_matmuls + weights_col, WIDTH);
 
-		#pragma unroll
+		TCNN_PRAGMA_UNROLL
 		for (int l = 0; l < N_ITERS; ++l) {
 			wmma::fill_fragment(result_frag[l], 0.0f);
 
@@ -227,14 +228,14 @@ __global__ void kernel_mlp_fused_backward(
 
 		__syncthreads();
 
-		#pragma unroll
+		TCNN_PRAGMA_UNROLL
 		for (int l = 0; l < N_ITERS; ++l) {
 			wmma::store_matrix_sync(act_shmem + weights_col + (16 * l) * (WIDTH + SKEW), result_frag[l], WIDTH + SKEW, wmma::mem_row_major);
 		}
 
 		__syncthreads();
 
-		#pragma unroll
+		TCNN_PRAGMA_UNROLL
 		for (int i = 0; i < N_ITERS; ++i) {
 			*(int4*)&out_intermediate[lane_offset + (row + elem_idx + i * 16) * WIDTH] = *(int4*)&act_shmem[lane_offset + (row + 16 * i) * (WIDTH + SKEW)];
 		}
@@ -350,7 +351,7 @@ __device__ void threadblock_input_layer_forward_dynamic(Activation activation, _
 
 	const uint32_t n_elems_b = WIDTH * in_width;
 
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (uint32_t idx = thread_elem_idx; idx < n_elems_b; idx += n_elems_per_load) {
 		const uint32_t idx_skewed = idx + idx / in_width * INPUT_SKEW;
 		*(int4*)&weights_shmem[idx_skewed] = *(int4*)&weights_this_layer[idx];
@@ -362,7 +363,7 @@ __device__ void threadblock_input_layer_forward_dynamic(Activation activation, _
 		__syncthreads();
 	}
 
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (int l = 0; l < N_ITERS; ++l) {
 		if (std::is_same<INPUT_LAYOUT, wmma::row_major>::value) {
 			// Load chunk of inputs into shmem.
@@ -370,7 +371,7 @@ __device__ void threadblock_input_layer_forward_dynamic(Activation activation, _
 			// (Possibly due to latency hiding through staging.)
 			const uint32_t n_elems_a = 16 * in_width;
 
-			#pragma unroll
+			TCNN_PRAGMA_UNROLL
 			for (uint32_t idx = thread_elem_idx; idx < n_elems_a; idx += n_elems_per_load) {
 				const uint32_t idx_skewed = idx + idx / in_width * INPUT_SKEW;
 				*(int4*)&act_shmem[idx_skewed] = *(int4*)&input_threadblock[l * n_elems_a + idx];
@@ -380,7 +381,7 @@ __device__ void threadblock_input_layer_forward_dynamic(Activation activation, _
 		}
 
 		wmma::fill_fragment(result_frag[l], 0.0f);
-		#pragma unroll
+		TCNN_PRAGMA_UNROLL
 		for (uint32_t i = 0; i < n_tensor_ops; ++i) {
 			// Load chunk of inputs and weights from shared memory and multiply them
 			if (std::is_same<INPUT_LAYOUT, wmma::row_major>::value) {
@@ -403,7 +404,7 @@ __device__ void threadblock_input_layer_forward_dynamic(Activation activation, _
 		__syncthreads();
 	}
 
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (int l = 0; l < N_ITERS; ++l) {
 		wmma::store_matrix_sync(act_shmem + weights_col + (16 * l) * (WIDTH + SKEW), result_frag[l], WIDTH + SKEW, wmma::mem_row_major);
 	}
@@ -411,7 +412,7 @@ __device__ void threadblock_input_layer_forward_dynamic(Activation activation, _
 	if (out_intermediate_threadblock_this_layer != nullptr) {
 		__syncthreads();
 
-		#pragma unroll
+		TCNN_PRAGMA_UNROLL
 		for (int i = 0; i < N_ITERS; ++i) {
 			*(int4*)&out_intermediate_threadblock_this_layer[lane_offset + (row + 16 * i) * WIDTH] = *(int4*)&act_shmem[lane_offset + (row + 16 * i) * (WIDTH + SKEW)];
 		}
@@ -451,14 +452,14 @@ __device__ void threadblock_last_layer_forward(Activation activation, __half* __
 
 	__syncthreads();
 
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (uint32_t i = 0; i < N_BLOCKS; ++i)
 		wmma::load_matrix_sync(weights_frag[i], weights_shmem + 16 * i, WIDTH + SKEW);
 
 	// Perform last layer by parallelizing over iters
 	for (uint32_t idx = wi; idx < N_ITERS; idx += N_BLOCKS) {
 		wmma::fill_fragment(result_frag, 0.0f);
-		#pragma unroll
+		TCNN_PRAGMA_UNROLL
 		for (uint32_t i = 0; i < N_BLOCKS; ++i) {
 			// Load a chunk of intermediate activations from shared memory and multiply with chunk of the weight matrix
 			wmma::load_matrix_sync(act_frag, act_shmem + 16 * i + (16 * idx) * (WIDTH + SKEW), WIDTH + SKEW);
@@ -490,7 +491,7 @@ __device__ void threadblock_write_output_static(const __half* __restrict__ act_s
 
 	__syncthreads();
 
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (int i = 0; i < N_ITERS; ++i) {
 		*(int4*)&output_threadblock[lane_offset + (row + 16 * i) * WIDTH] = *(int4*)&act_shmem[lane_offset + (row + 16 * i) * (WIDTH + SKEW)];
 	}
@@ -598,7 +599,7 @@ std::enable_if_t<std::is_same<__half, T>::value> mlp_fused_forward(
 	const int N_ITERS = WIDTH >= 256 ? 2 : 8;
 
 	if (batch_size % (16 * N_ITERS) != 0) {
-		throw std::runtime_error{"Batch size must be a multiple of " + std::to_string(16 * N_ITERS) + "."};
+		throw std::runtime_error{fmt::format("Batch size must be a multiple of {}.", 16 * N_ITERS)};
 	}
 
 	const dim3 threads = { 32u, N_BLOCK_ROWS, 1 }; // 32 threads = 1 warp, N_BLOCK_ROWS warps per block for 16 rows, up to 2x 8 warps can share input (does not help vs. 1)
@@ -637,7 +638,6 @@ FullyFusedMLP<T, WIDTH>::FullyFusedMLP(
 	uint32_t input_width,
 	uint32_t output_width,
 	uint32_t n_hidden_layers,
-	bool use_feedback_alignment,
 	Activation activation,
 	Activation output_activation
 ) :
@@ -645,7 +645,6 @@ m_input_width{input_width},
 m_network_width{WIDTH},
 m_output_width{output_width},
 m_n_hidden_layers{n_hidden_layers},
-m_use_feedback_alignment{use_feedback_alignment},
 m_activation{activation},
 m_output_activation{output_activation}
 {
@@ -655,27 +654,21 @@ m_output_activation{output_activation}
 
 	m_n_hidden_matmuls = n_hidden_layers-1;
 
-	m_padded_output_width = next_multiple(m_output_width, tensorcore_width);
+	m_padded_output_width = next_multiple(m_output_width, REQUIRED_ALIGNMENT());
 
 	// Create matrices related to weights
 	m_weight_matrices.emplace_back(nullptr, m_network_width, m_input_width);
 	m_weight_matrices_inference.emplace_back(nullptr, m_network_width, m_input_width);
-	m_weight_matrices_backward.emplace_back(nullptr, m_network_width, m_input_width);
-	m_weight_matrices_full_precision.emplace_back(nullptr, m_network_width, m_input_width);
 	m_gradient_matrices.emplace_back(nullptr, m_network_width, m_input_width);
 
 	for (uint32_t i = 0; i < m_n_hidden_matmuls; ++i) {
 		m_weight_matrices.emplace_back(nullptr, m_network_width, m_network_width);
 		m_weight_matrices_inference.emplace_back(nullptr, m_network_width, m_network_width);
-		m_weight_matrices_backward.emplace_back(nullptr, m_network_width, m_network_width);
-		m_weight_matrices_full_precision.emplace_back(nullptr, m_network_width, m_network_width);
 		m_gradient_matrices.emplace_back(nullptr, m_network_width, m_network_width);
 	}
 
 	m_weight_matrices.emplace_back(nullptr, m_padded_output_width, m_network_width);
 	m_weight_matrices_inference.emplace_back(nullptr, m_padded_output_width, m_network_width);
-	m_weight_matrices_backward.emplace_back(nullptr, m_padded_output_width, m_network_width);
-	m_weight_matrices_full_precision.emplace_back(nullptr, m_padded_output_width, m_network_width);
 	m_gradient_matrices.emplace_back(nullptr, m_padded_output_width, m_network_width);
 
 	// Determine total number of memory entries and set it
@@ -683,36 +676,6 @@ m_output_activation{output_activation}
 	for (const auto& m : m_weight_matrices) {
 		m_total_n_params += m.n_elements();
 	}
-
-	// 1 stream per matmul
-	m_training_splitk_streams.resize(m_n_hidden_layers + 1);
-	m_training_splitk_events.resize(m_n_hidden_layers + 1);
-
-	for (size_t i = 0; i < m_training_splitk_streams.size(); ++i) {
-		CUDA_CHECK_THROW(cudaStreamCreate(&m_training_splitk_streams[i]));
-		CUDA_CHECK_THROW(cudaEventCreate(&m_training_splitk_events[i]));
-	}
-}
-
-template <typename T, int WIDTH>
-FullyFusedMLP<T, WIDTH>::~FullyFusedMLP() {
-	for (size_t i = 0; i < m_training_splitk_streams.size(); ++i) {
-		free_gpu_memory_arena(m_training_splitk_streams[i]);
-
-		CUDA_CHECK_PRINT(cudaEventDestroy(m_training_splitk_events[i]));
-		CUDA_CHECK_PRINT(cudaStreamDestroy(m_training_splitk_streams[i]));
-	}
-}
-
-template <typename CutlassLayer, MatrixLayout input_layout, typename T>
-void compute_inference_layer(
-	cudaStream_t stream,
-	Activation activation,
-	const GPUMatrix<T, RM>& weights,
-	const GPUMatrix<T, input_layout>& input,
-	GPUMatrixDynamic<T>& output
-) {
-	fc_multiply<CutlassLayer>(stream, weights, input, output, activation);
 }
 
 template <typename T, int WIDTH>
@@ -722,27 +685,26 @@ void FullyFusedMLP<T, WIDTH>::inference_mixed_precision_impl(cudaStream_t stream
 
 	GPUMatrix<T> inference_tmp = m_output_width > 16 ? GPUMatrix<T>{m_network_width, batch_size, stream} : GPUMatrix<T>{nullptr, m_network_width, batch_size};
 
-	const WeightUsage weight_usage = use_inference_params ? WeightUsage::Inference : WeightUsage::Forward;
-
 	// ASSUMPTION: weight matrices are contiguous in memory
 	switch (m_activation) {
-		case Activation::None:        mlp_fused_forward<WIDTH, T, Activation::None, true>(       stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
-		case Activation::Exponential: mlp_fused_forward<WIDTH, T, Activation::Exponential, true>(stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
-		case Activation::Sigmoid:     mlp_fused_forward<WIDTH, T, Activation::Sigmoid, true>(    stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
-		case Activation::ReLU:        mlp_fused_forward<WIDTH, T, Activation::ReLU, true>(       stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
-		case Activation::Squareplus:  mlp_fused_forward<WIDTH, T, Activation::Squareplus, true>( stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
-		case Activation::Softplus2:    mlp_fused_forward<WIDTH, T, Activation::Softplus2, true>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
-                case Activation::Softplus4:    mlp_fused_forward<WIDTH, T, Activation::Softplus4, true>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
-                case Activation::ClampedSoftplus2:    mlp_fused_forward<WIDTH, T, Activation::ClampedSoftplus2, true>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
-                case Activation::ClampedSoftplus4:    mlp_fused_forward<WIDTH, T, Activation::ClampedSoftplus4, true>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
-                case Activation::Softplus4Minus:    mlp_fused_forward<WIDTH, T, Activation::Softplus4Minus, true>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+		case Activation::None:        mlp_fused_forward<WIDTH, T, Activation::None, true>(       stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+		case Activation::Exponential: mlp_fused_forward<WIDTH, T, Activation::Exponential, true>(stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+		case Activation::Sigmoid:     mlp_fused_forward<WIDTH, T, Activation::Sigmoid, true>(    stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+		case Activation::ReLU:        mlp_fused_forward<WIDTH, T, Activation::ReLU, true>(       stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+		case Activation::Squareplus:  mlp_fused_forward<WIDTH, T, Activation::Squareplus, true>( stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+		case Activation::Softplus2:    mlp_fused_forward<WIDTH, T, Activation::Softplus2, true>(   stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+                case Activation::Softplus4:    mlp_fused_forward<WIDTH, T, Activation::Softplus4, true>(   stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+                case Activation::ClampedSoftplus2:    mlp_fused_forward<WIDTH, T, Activation::ClampedSoftplus2, true>(   stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+                case Activation::ClampedSoftplus4:    mlp_fused_forward<WIDTH, T, Activation::ClampedSoftplus4, true>(   stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+                case Activation::Softplus4Minus:    mlp_fused_forward<WIDTH, T, Activation::Softplus4Minus, true>(   stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
+                case Activation::Tanh:        mlp_fused_forward<WIDTH, T, Activation::Tanh, true>(       stream, m_output_activation, input_weight_matrix(use_inference_params), input, inference_tmp, &output, m_n_hidden_matmuls); break;
 		default: throw std::runtime_error{"Unsupported activation."};
 	}
 
 	// If we have more than 16 output dimensions, these will be taken care of by CUTLASS rather than
 	// the fully fused kernel (which will have written out the second-to-last layer activations).
 	if (m_output_width > 16) {
-		compute_inference_layer<LastLayer>(stream, m_output_activation, output_weight_matrix(weight_usage), inference_tmp, output);
+		fc_multiply<LastLayer>(stream, output_weight_matrix(use_inference_params), inference_tmp, output, m_output_activation);
 	}
 }
 
@@ -752,27 +714,26 @@ std::unique_ptr<Context> FullyFusedMLP<T, WIDTH>::forward_impl(cudaStream_t stre
 	uint32_t batch_size = input.n();
 	auto forward = allocate_forward_buffers(stream, batch_size);
 
-	const WeightUsage weight_usage = use_inference_params ? WeightUsage::Inference : WeightUsage::Forward;
-
 	// ASSUMPTION: weight matrices & forward_tmp matrices are contiguous in memory
 	switch (m_activation) {
-		case Activation::None:        mlp_fused_forward<WIDTH, T, Activation::None, false>(       stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
-		case Activation::Exponential: mlp_fused_forward<WIDTH, T, Activation::Exponential, false>(stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
-		case Activation::Sigmoid:     mlp_fused_forward<WIDTH, T, Activation::Sigmoid, false>(    stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
-		case Activation::ReLU:        mlp_fused_forward<WIDTH, T, Activation::ReLU, false>(       stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
-		case Activation::Squareplus:  mlp_fused_forward<WIDTH, T, Activation::Squareplus, false>( stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
-		case Activation::Softplus2:    mlp_fused_forward<WIDTH, T, Activation::Softplus2, false>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
-                case Activation::Softplus4:    mlp_fused_forward<WIDTH, T, Activation::Softplus4, false>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
-                case Activation::ClampedSoftplus2:    mlp_fused_forward<WIDTH, T, Activation::ClampedSoftplus2, false>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
-                case Activation::ClampedSoftplus4:    mlp_fused_forward<WIDTH, T, Activation::ClampedSoftplus4, false>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
-                case Activation::Softplus4Minus:    mlp_fused_forward<WIDTH, T, Activation::Softplus4Minus, false>(   stream, m_output_activation, input_weight_matrix(weight_usage), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+		case Activation::None:        mlp_fused_forward<WIDTH, T, Activation::None, false>(       stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+		case Activation::Exponential: mlp_fused_forward<WIDTH, T, Activation::Exponential, false>(stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+		case Activation::Sigmoid:     mlp_fused_forward<WIDTH, T, Activation::Sigmoid, false>(    stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+		case Activation::ReLU:        mlp_fused_forward<WIDTH, T, Activation::ReLU, false>(       stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+		case Activation::Squareplus:  mlp_fused_forward<WIDTH, T, Activation::Squareplus, false>( stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+		case Activation::Softplus2:    mlp_fused_forward<WIDTH, T, Activation::Softplus2, false>(   stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+                case Activation::Softplus4:    mlp_fused_forward<WIDTH, T, Activation::Softplus4, false>(   stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+                case Activation::ClampedSoftplus2:    mlp_fused_forward<WIDTH, T, Activation::ClampedSoftplus2, false>(   stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+                case Activation::ClampedSoftplus4:    mlp_fused_forward<WIDTH, T, Activation::ClampedSoftplus4, false>(   stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+                case Activation::Softplus4Minus:    mlp_fused_forward<WIDTH, T, Activation::Softplus4Minus, false>(   stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
+                case Activation::Tanh:        mlp_fused_forward<WIDTH, T, Activation::Tanh, false>(       stream, m_output_activation, input_weight_matrix(use_inference_params), input, forward->hidden.at(0), output, m_n_hidden_matmuls); break;
 		default: throw std::runtime_error{"Unsupported activation."};
 	}
 
 	// If we have more than 16 output dimensions, these will be taken care of by CUTLASS rather than
 	// the fully fused kernel (which will have written out the second-to-last layer activations).
 	if (output && m_output_width > 16) {
-		compute_inference_layer<LastLayer>(stream, m_output_activation, output_weight_matrix(weight_usage), forward->hidden.back(), *output);
+		fc_multiply<LastLayer>(stream, output_weight_matrix(use_inference_params), forward->hidden.back(), *output, m_output_activation);
 	}
 
 	return forward;
@@ -812,93 +773,75 @@ void FullyFusedMLP<T, WIDTH>::backward_impl(
 	// - input_gradient = weights.T * output_gradient
 	// - RELU: pre_activation_gradinet = post_activation_gradient if val > 0 else 0
 
-	const WeightUsage weight_usage = use_inference_params ? WeightUsage::Inference : WeightUsage::Backward;
 	const float param_gradient_beta = param_gradients_mode == EGradientMode::Accumulate ? 1.0f : 0.0f;
 
-	{
-		const auto& forward = dynamic_cast<const ForwardContext&>(ctx);
+	std::vector<SyncedMultiStream> multi_streams;
 
-		int split_k_factor = batch_size / std::min((uint32_t)(1 << 12), batch_size);
+	const auto& forward = dynamic_cast<const ForwardContext&>(ctx);
 
-		const GPUMatrixDynamic<T>& tmp_dL_doutput = m_output_activation == Activation::None ? dL_doutput : backward_output_tmp;
+	int split_k_factor = batch_size / std::min((uint32_t)(1 << 12), batch_size);
 
-		uint32_t tmp_idx = m_n_hidden_matmuls;
-		uint32_t backward_tmp_idx = 0;
+	const GPUMatrixDynamic<T>& tmp_dL_doutput = m_output_activation == Activation::None ? dL_doutput : backward_output_tmp;
 
-		if (param_gradients_mode != EGradientMode::Ignore) {
-			// Output layer
-			cudaEventRecord(m_training_splitk_events.at(backward_tmp_idx), stream);
-			cudaStreamWaitEvent(m_training_splitk_streams.at(backward_tmp_idx), m_training_splitk_events.at(backward_tmp_idx), 0);
+	uint32_t tmp_idx = m_n_hidden_matmuls;
+	uint32_t backward_tmp_idx = 0;
 
-			// Compute weight gradients
-			fc_multiply_split_k<LastLayerK>(m_training_splitk_streams.at(backward_tmp_idx), tmp_dL_doutput, forward.hidden.at(tmp_idx).transposed(), output_gradient_matrix(), split_k_factor, param_gradient_beta);
+	// Output layer
+	if (param_gradients_mode != EGradientMode::Ignore) {
+		multi_streams.emplace_back(stream, 2);
+		fc_multiply_split_k<LastLayerK>(multi_streams.back().get(1), tmp_dL_doutput, forward.hidden.at(tmp_idx).transposed(), output_gradient_matrix(), split_k_factor, param_gradient_beta);
+	}
 
-			cudaEventRecord(m_training_splitk_events.at(backward_tmp_idx), m_training_splitk_streams.at(backward_tmp_idx));
-		}
+	// If the output width is larger than 16 dims, we use cutlass to backpropagate through the last layer
+	// rather than fusing it with our kernel.
+	if (m_output_width > 16) {
+		fc_multiply<FullLayer>(stream, output_weight_matrix(use_inference_params).transposed(), tmp_dL_doutput, forward.hidden.at(tmp_idx), backward_tmp.at(backward_tmp_idx), m_activation, true);
+	}
 
-		// If the output width is larger than 16 dims, we use cutlass to backpropagate through the last layer
-		// rather than fusing it with our kernel.
-		if (m_output_width > 16) {
-			fc_multiply<FullLayer>(stream, output_weight_matrix(weight_usage).transposed(), tmp_dL_doutput, forward.hidden.at(tmp_idx), backward_tmp.at(backward_tmp_idx), m_activation, true);
-		}
-
-		// Only let the fully fused kernel compute gradients w.r.t. the input, if the input layer has the same size & layout as the other layers
-		auto dL_dinput_fused = input.m() == forward.hidden.at(0).m() && input.layout() == CM ? dL_dinput : nullptr;
+	// Only let the fully fused kernel compute gradients w.r.t. the input, if the input layer has the same size & layout as the other layers
+	auto dL_dinput_fused = input.m() == forward.hidden.at(0).m() && input.layout() == CM ? dL_dinput : nullptr;
 
 		// ASSUMPTION: weight matrices & forward_tmp matrices are contiguous in memory
 		switch (m_activation) {
-			case Activation::None:        mlp_fused_backward<WIDTH, T, Activation::None>(       stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
-			case Activation::Exponential: mlp_fused_backward<WIDTH, T, Activation::Exponential>(stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
-			case Activation::Sigmoid:     mlp_fused_backward<WIDTH, T, Activation::Sigmoid>(    stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
-			case Activation::ReLU:        mlp_fused_backward<WIDTH, T, Activation::ReLU>(       stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
-			case Activation::Squareplus:  mlp_fused_backward<WIDTH, T, Activation::Squareplus>( stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
-			case Activation::Softplus2:    mlp_fused_backward<WIDTH, T, Activation::Softplus2>(   stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
-                        case Activation::Softplus4:    mlp_fused_backward<WIDTH, T, Activation::Softplus4>(   stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
-                        case Activation::ClampedSoftplus2:    mlp_fused_backward<WIDTH, T, Activation::ClampedSoftplus2>(   stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
-                        case Activation::ClampedSoftplus4:    mlp_fused_backward<WIDTH, T, Activation::ClampedSoftplus4>(   stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
-                        case Activation::Softplus4Minus:    mlp_fused_backward<WIDTH, T, Activation::Softplus4Minus>(   stream, input_weight_matrix(weight_usage), weight_matrix_at(weight_usage, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+			case Activation::None:        mlp_fused_backward<WIDTH, T, Activation::None>(       stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+			case Activation::Exponential: mlp_fused_backward<WIDTH, T, Activation::Exponential>(stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+			case Activation::Sigmoid:     mlp_fused_backward<WIDTH, T, Activation::Sigmoid>(    stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+			case Activation::ReLU:        mlp_fused_backward<WIDTH, T, Activation::ReLU>(       stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+			case Activation::Squareplus:  mlp_fused_backward<WIDTH, T, Activation::Squareplus>( stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+			case Activation::Softplus2:    mlp_fused_backward<WIDTH, T, Activation::Softplus2>(   stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+                        case Activation::Softplus4:    mlp_fused_backward<WIDTH, T, Activation::Softplus4>(   stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+                        case Activation::ClampedSoftplus2:    mlp_fused_backward<WIDTH, T, Activation::ClampedSoftplus2>(   stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+                        case Activation::ClampedSoftplus4:    mlp_fused_backward<WIDTH, T, Activation::ClampedSoftplus4>(   stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+                        case Activation::Softplus4Minus:    mlp_fused_backward<WIDTH, T, Activation::Softplus4Minus>(   stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
+                        case Activation::Tanh:        mlp_fused_backward<WIDTH, T, Activation::Tanh>(       stream, input_weight_matrix(use_inference_params), weight_matrix_at(use_inference_params, 0), tmp_dL_doutput, backward_tmp.at(backward_tmp_idx), forward.hidden.at(0), dL_dinput_fused, m_n_hidden_matmuls); break;
 			default: throw std::runtime_error{"Unsupported activation."};
+		}
+
+	tmp_idx -= 1;
+	++backward_tmp_idx;
+
+	// layers
+	for (uint32_t i = 0; i < m_n_hidden_matmuls; ++i) {
+		uint32_t matrix_idx = m_n_hidden_matmuls - i - 1;
+
+		if (param_gradients_mode != EGradientMode::Ignore) {
+			multi_streams.emplace_back(stream, 2);
+			fc_multiply_split_k<FullLayerK>(multi_streams.back().get(1), backward_tmp.at(backward_tmp_idx-1), forward.hidden.at(tmp_idx).transposed(), gradient_matrix_at(matrix_idx), split_k_factor, param_gradient_beta);
 		}
 
 		tmp_idx -= 1;
 		++backward_tmp_idx;
-
-		// layers
-		for (uint32_t i = 0; i < m_n_hidden_matmuls; ++i) {
-			uint32_t matrix_idx = m_n_hidden_matmuls - i - 1;
-
-			if (param_gradients_mode != EGradientMode::Ignore) {
-				cudaEventRecord(m_training_splitk_events.at(backward_tmp_idx), stream);
-				cudaStreamWaitEvent(m_training_splitk_streams.at(backward_tmp_idx), m_training_splitk_events.at(backward_tmp_idx), 0);
-				fc_multiply_split_k<FullLayerK>(m_training_splitk_streams.at(backward_tmp_idx), backward_tmp.at(backward_tmp_idx-1), forward.hidden.at(tmp_idx).transposed(), gradient_matrix_at(matrix_idx), split_k_factor, param_gradient_beta);
-				cudaEventRecord(m_training_splitk_events.at(backward_tmp_idx), m_training_splitk_streams.at(backward_tmp_idx));
-			}
-
-			tmp_idx -= 1;
-			++backward_tmp_idx;
-		}
-
-		if (param_gradients_mode != EGradientMode::Ignore) {
-			cudaEventRecord(m_training_splitk_events.at(backward_tmp_idx), stream);
-			cudaStreamWaitEvent(m_training_splitk_streams.at(backward_tmp_idx), m_training_splitk_events.at(backward_tmp_idx), 0);
-			fc_multiply_split_k<FullLayerK>(m_training_splitk_streams.at(backward_tmp_idx), backward_tmp.at(backward_tmp_idx-1), input.transposed(), input_gradient_matrix(), split_k_factor, param_gradient_beta);
-			cudaEventRecord(m_training_splitk_events.at(backward_tmp_idx), m_training_splitk_streams.at(backward_tmp_idx));
-		}
-
-		// If requested and if the fully fused kernel didn't already take care of it, compute sensitivity of loss w.r.t. inputs
-		if (dL_dinput && !dL_dinput_fused) {
-			// TODO: optimization opportunity to only compute sensitivity w.r.t selected SUBSET of inputs. Useful for NFs, where conditional dims stay the same.
-			fc_multiply<FullLayer>(stream, input_weight_matrix(weight_usage).transposed(), backward_tmp.at(backward_tmp_idx-1), *dL_dinput);
-		}
 	}
 
 	if (param_gradients_mode != EGradientMode::Ignore) {
-		// All the per-layer split-k matrix multiplications summing over
-		// the batch are computed in parallel streams to the actual
-		// backpropagation. Here, we need to wait for all of these to complete.
-		for (auto& event : m_training_splitk_events) {
-			cudaStreamWaitEvent(stream, event, 0);
-		}
+		multi_streams.emplace_back(stream, 2);
+		fc_multiply_split_k<FullLayerK>(multi_streams.back().get(1), backward_tmp.at(backward_tmp_idx-1), input.transposed(), input_gradient_matrix(), split_k_factor, param_gradient_beta);
+	}
+
+	// If requested and if the fully fused kernel didn't already take care of it, compute sensitivity of loss w.r.t. inputs
+	if (dL_dinput && !dL_dinput_fused) {
+		// TODO: optimization opportunity to only compute sensitivity w.r.t selected SUBSET of inputs. Useful for NFs, where conditional dims stay the same.
+		fc_multiply<FullLayer>(stream, input_weight_matrix(use_inference_params).transposed(), backward_tmp.at(backward_tmp_idx-1), *dL_dinput);
 	}
 }
 
@@ -919,43 +862,40 @@ std::unique_ptr<typename FullyFusedMLP<T, WIDTH>::ForwardContext> FullyFusedMLP<
 }
 
 template <typename T, int WIDTH>
-void FullyFusedMLP<T, WIDTH>::set_params(T* params, T* inference_params, T* backward_params, T* gradients) {
+void FullyFusedMLP<T, WIDTH>::set_params_impl(T* params, T* inference_params, T* gradients) {
 	size_t current_pos = 0;
 	for (size_t i = 0; i < m_weight_matrices.size(); ++i) {
 		m_weight_matrices[i].set_data_unsafe(params + current_pos);
 		m_weight_matrices_inference[i].set_data_unsafe(inference_params + current_pos);
-		m_weight_matrices_backward[i].set_data_unsafe((m_use_feedback_alignment ? backward_params : params) + current_pos);
 		m_gradient_matrices[i].set_data_unsafe(gradients + current_pos);
 		current_pos += m_weight_matrices[i].n_elements();
 	}
 }
 
 template <typename T, int WIDTH>
-void FullyFusedMLP<T, WIDTH>::initialize_params(pcg32& rnd, float* params_full_precision, T* params, T* inference_params, T* backward_params, T* gradients, float scale) {
-	set_params(params, inference_params, backward_params, gradients);
+void FullyFusedMLP<T, WIDTH>::initialize_params(pcg32& rnd, float* params_full_precision, float scale) {
+	// Construct weight matrices
+	std::vector<GPUMatrix<float, RM>> weight_matrices_full_precision;
+	weight_matrices_full_precision.emplace_back(params_full_precision, m_network_width, m_input_width);
+	params_full_precision += weight_matrices_full_precision.back().n_elements();
 
-	size_t current_pos = 0;
-	for (size_t i = 0; i < m_weight_matrices_full_precision.size(); ++i) {
-		m_weight_matrices_full_precision[i].set_data_unsafe(params_full_precision + current_pos);
-		current_pos += m_weight_matrices_full_precision[i].n_elements();
-
-		if (m_activation == Activation::Sine) {
-			if (i == 0) {
-				m_weight_matrices_full_precision[i].initialize_siren_uniform_first(rnd, scale);
-			} else {
-				m_weight_matrices_full_precision[i].initialize_siren_uniform(rnd, scale);
-			}
-		} else if (m_use_feedback_alignment) {
-			m_weight_matrices_full_precision[i].initialize_fa_uniform_forward(rnd, scale);
-		} else {
-			m_weight_matrices_full_precision[i].initialize_xavier_uniform(rnd, scale);
-		}
+	for (uint32_t i = 0; i < m_n_hidden_matmuls; ++i) {
+		weight_matrices_full_precision.emplace_back(params_full_precision, m_network_width, m_network_width);
+		params_full_precision += weight_matrices_full_precision.back().n_elements();
 	}
 
-	// Initialize backward params for feedback alignment
-	if (m_use_feedback_alignment) {
-		for (size_t i = 0; i < m_weight_matrices_backward.size(); ++i) {
-			m_weight_matrices_backward[i].initialize_fa_uniform_backward(rnd, scale);
+	weight_matrices_full_precision.emplace_back(params_full_precision, m_padded_output_width, m_network_width);
+
+	// Initialize matrices
+	for (size_t i = 0; i < weight_matrices_full_precision.size(); ++i) {
+		if (m_activation == Activation::Sine) {
+			if (i == 0) {
+				weight_matrices_full_precision[i].initialize_siren_uniform_first(rnd, scale);
+			} else {
+				weight_matrices_full_precision[i].initialize_siren_uniform(rnd, scale);
+			}
+		} else {
+			weight_matrices_full_precision[i].initialize_xavier_uniform(rnd, scale);
 		}
 	}
 }

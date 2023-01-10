@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   optimizer.cu
@@ -33,6 +32,7 @@
 #include <tiny-cuda-nn/optimizers/adam.h>
 #include <tiny-cuda-nn/optimizers/average.h>
 #include <tiny-cuda-nn/optimizers/batched.h>
+#include <tiny-cuda-nn/optimizers/composite.h>
 #include <tiny-cuda-nn/optimizers/ema.h>
 #include <tiny-cuda-nn/optimizers/exponential_decay.h>
 #include <tiny-cuda-nn/optimizers/lookahead.h>
@@ -56,6 +56,8 @@ Optimizer<T>* create_optimizer(const json& optimizer) {
 		return new AverageOptimizer<T>{optimizer};
 	} else if (equals_case_insensitive(optimizer_type, "Batched")) {
 		return new BatchedOptimizer<T>{optimizer};
+	} else if (equals_case_insensitive(optimizer_type, "Composite")) {
+		return new CompositeOptimizer<T>{optimizer};
 	} else if (equals_case_insensitive(optimizer_type, "Ema")) {
 		return new EmaOptimizer<T>{optimizer};
 	} else if (equals_case_insensitive(optimizer_type, "ExponentialDecay")) {
@@ -70,10 +72,10 @@ Optimizer<T>* create_optimizer(const json& optimizer) {
 #ifdef TCNN_SHAMPOO
 		return new ShampooOptimizer<T>{optimizer};
 #else
-		throw std::runtime_error{"The Shampoo optimizer is only available when compiling with CUDA 11 or higher."};
+		throw std::runtime_error{"Cannot create `ShampooOptimizer` because tiny-cuda-nn was not compiled with cuBLAS and cuSolver."};
 #endif
 	} else {
-		throw std::runtime_error{std::string{"Invalid optimizer type: "} + optimizer_type};
+		throw std::runtime_error{fmt::format("Invalid optimizer type: {}", optimizer_type)};
 	}
 }
 

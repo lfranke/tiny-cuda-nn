@@ -62,6 +62,8 @@ Activation string_to_activation(const std::string& activation_name) {
             return Activation::ClampedSoftplus4;
         }else if (equals_case_insensitive(activation_name, "Softplus4Minus")) {
             return Activation::Softplus4Minus;
+        }else if (equals_case_insensitive(activation_name, "Tanh")) {
+            return Activation::Tanh;
         }
 
 	throw std::runtime_error{std::string{"Invalid activation name: "} + activation_name};
@@ -80,7 +82,8 @@ std::string to_string(Activation activation) {
                 case Activation::ClampedSoftplus2: return "ClampedSoftplus2";
                 case Activation::ClampedSoftplus4: return "ClampedSoftplus4";
                 case Activation::Softplus4Minus: return "Softplus4Minus";
-		default: throw std::runtime_error{std::string{"Invalid activation"}};
+		case Activation::Tanh: return "Tanh";
+		default: throw std::runtime_error{"Invalid activation."};
 	}
 }
 
@@ -135,27 +138,26 @@ Network<T>* create_network(const json& network) {
 		if (!std::is_same<network_precision_t, __half>::value) {
 			throw std::runtime_error{"FullyFusedMLP can only be used if the network precision is set to __half."};
 		} else {
-#if TCNN_MIN_GPU_ARCH >= 70
+#if TCNN_MIN_GPU_ARCH > 70
 #  define TCNN_FULLY_FUSED_PARAMS \
 	network["n_input_dims"], \
 	network["n_output_dims"], \
 	network.value("n_hidden_layers", 5u), \
-	network.value("feedback_alignment", false), \
 	string_to_activation(network.value("activation", "ReLU")), \
 	string_to_activation(network.value("output_activation", "None")),
 
 			uint32_t n_neurons = network.value("n_neurons", 128u);
 			switch (n_neurons) {
-				case 16:  return new FullyFusedMLP<T,  16>{TCNN_FULLY_FUSED_PARAMS};
-				case 32:  return new FullyFusedMLP<T,  32>{TCNN_FULLY_FUSED_PARAMS};
-				case 64:  return new FullyFusedMLP<T,  64>{TCNN_FULLY_FUSED_PARAMS};
+				case  16: return new FullyFusedMLP<T,  16>{TCNN_FULLY_FUSED_PARAMS};
+				case  32: return new FullyFusedMLP<T,  32>{TCNN_FULLY_FUSED_PARAMS};
+				case  64: return new FullyFusedMLP<T,  64>{TCNN_FULLY_FUSED_PARAMS};
 				case 128: return new FullyFusedMLP<T, 128>{TCNN_FULLY_FUSED_PARAMS};
-				default: throw std::runtime_error{std::string{"FullyFusedMLP only supports 16, 32, 64, and 128 neurons, but got "} + std::to_string(n_neurons) + ". Use CutlassMLP instead if this is a requirement."};
+				default: throw std::runtime_error{fmt::format("FullyFusedMLP only supports 16, 32, 64, and 128 neurons, but got {}. Use CutlassMLP instead if this is a requirement.", n_neurons)};
 			}
 #  undef TCNN_FULLY_FUSED_PARAMS
-#else //TCNN_MIN_GPU_ARCH >= 70
-			throw std::runtime_error{"FullyFusedMLP was not compiled due to insufficient GPU arch of <70."};
-#endif //TCNN_MIN_GPU_ARCH >= 70
+#else //TCNN_MIN_GPU_ARCH > 70
+			throw std::runtime_error{"FullyFusedMLP was not compiled due to insufficient GPU arch of <=70."};
+#endif //TCNN_MIN_GPU_ARCH > 70
 		}
 	} else if (equals_case_insensitive(network_type, "CutlassMLP")) {
 		return new CutlassMLP<T>{
@@ -168,7 +170,7 @@ Network<T>* create_network(const json& network) {
 		};
 	}
 
-	throw std::runtime_error{std::string{"Invalid network type: "} + network_type};
+	throw std::runtime_error{fmt::format("Invalid network type: {}", network_type)};
 }
 
 template Network<network_precision_t>* create_network(const json& network);

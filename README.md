@@ -45,7 +45,7 @@ using namespace tcnn;
 
 auto model = create_from_config(n_input_dims, n_output_dims, config);
 
-// Train the model
+// Train the model (batch_size must be a multiple of tcnn::batch_size_granularity)
 GPUMatrix<float> training_batch_inputs(n_input_dims, batch_size);
 GPUMatrix<float> training_batch_targets(n_output_dims, batch_size);
 
@@ -84,10 +84,13 @@ producing an image every 1000 training steps. Each 1000 steps should take roughl
 
 - An __NVIDIA GPU__; tensor cores increase performance when available. All shown results come from an RTX 3090.
 - A __C++14__ capable compiler. The following choices are recommended and have been tested:
-  - __Windows:__ Visual Studio 2019
-  - __Linux:__ GCC/G++ 7.5 or higher
-- __[CUDA](https://developer.nvidia.com/cuda-toolkit) v10.2 or higher__ and __[CMake](https://cmake.org/) v3.21 or higher__.
-- The fully fused MLP component of this framework requires a __very large__ amount of shared memory in its default configuration. It will likely only work on an RTX 3090, an RTX 2080 Ti, or high-end enterprise GPUs. Lower end cards must reduce the `n_neurons` parameter or use the `CutlassMLP` (better compatibility but slower) instead.
+  - __Windows:__ Visual Studio 2019 or 2022
+  - __Linux:__ GCC/G++ 8 or higher
+- A recent version of __[CUDA](https://developer.nvidia.com/cuda-toolkit)__. The following choices are recommended and have been tested:
+  - __Windows:__ CUDA 11.5 or higher
+  - __Linux:__ CUDA 10.2 or higher
+- __[CMake](https://cmake.org/) v3.21 or higher__.
+- The fully fused MLP component of this framework requires a __very large__ amount of shared memory in its default configuration. It will likely only work on an RTX 3090, an RTX 2080 Ti, or higher-end GPUs. Lower end cards must reduce the `n_neurons` parameter or use the `CutlassMLP` (better compatibility but slower) instead.
 
 If you are using Linux, install the following packages
 ```sh
@@ -113,8 +116,10 @@ $ cd tiny-cuda-nn
 Then, use CMake to build the project: (on Windows, this must be in a [developer command prompt](https://docs.microsoft.com/en-us/cpp/build/building-on-the-command-line?view=msvc-160#developer_command_prompt))
 ```sh
 tiny-cuda-nn$ cmake . -B build
-tiny-cuda-nn$ cmake --build build --config RelWithDebInfo -j 16
+tiny-cuda-nn$ cmake --build build --config RelWithDebInfo -j
 ```
+
+If compilation fails inexplicably or takes longer than an hour, you might be running out of memory. Try running the above command without `-j` in that case.
 
 
 ## PyTorch extension
@@ -201,6 +206,7 @@ Following is a summary of the components of this framework. [The JSON documentat
 | Shampoo | `include/tiny-cuda-nn/optimizers/shampoo.h` | Implementation of the 2nd order Shampoo optimizer [[Gupta et al. 2018]](https://arxiv.org/abs/1802.09568) with home-grown optimizations as well as those by [Anil et al. [2020]](https://arxiv.org/abs/2002.09018).
 | Average | `include/tiny-cuda-nn/optimizers/average.h` | Wraps another optimizer and computes a linear average of the weights over the last N iterations. The average is used for inference only (does not feed back into training).
 | Batched | `include/tiny-cuda-nn/optimizers/batched.h` | Wraps another optimizer, invoking the nested optimizer once every N steps on the averaged gradient. Has the same effect as increasing the batch size but requires only a constant amount of memory. |
+| Composite | `include/tiny-cuda-nn/optimizers/composite.h` | Allows using several optimizers on different parameters.
 | EMA | `include/tiny-cuda-nn/optimizers/average.h` | Wraps another optimizer and computes an exponential moving average of the weights. The average is used for inference only (does not feed back into training).
 | Exponential Decay | `include/tiny-cuda-nn/optimizers/exponential_decay.h` | Wraps another optimizer and performs piecewise-constant exponential learning-rate decay.
 | Lookahead | `include/tiny-cuda-nn/optimizers/lookahead.h` | Wraps another optimizer, implementing the lookahead algorithm [[Zhang et al. 2019]](https://arxiv.org/abs/1907.08610).
@@ -212,36 +218,51 @@ This framework is licensed under the BSD 3-clause license. Please see `LICENSE.t
 
 If you use it in your research, we would appreciate a citation via
 ```bibtex
-@misc{tiny-cuda-nn,
-    Author = {Thomas M\"uller},
-    Year = {2021},
-    Note = {https://github.com/nvlabs/tiny-cuda-nn},
-    Title = {Tiny {CUDA} Neural Network Framework}
+@software{tiny-cuda-nn,
+	author = {M\"uller, Thomas},
+	license = {BSD-3-Clause},
+	month = {4},
+	title = {{tiny-cuda-nn}},
+	url = {https://github.com/NVlabs/tiny-cuda-nn},
+	version = {1.7},
+	year = {2021}
 }
 ```
 
 For business inquiries, please visit our website and submit the form: [NVIDIA Research Licensing](https://www.nvidia.com/en-us/research/inquiries/)
 
 
-## Publications
+## Publications & Software
 
-This framework powers the following publications:
+Among others, this framework powers the following publications:
 
 > __Instant Neural Graphics Primitives with a Multiresolution Hash Encoding__  
 > [Thomas Müller](https://tom94.net), [Alex Evans](https://research.nvidia.com/person/alex-evans), [Christoph Schied](https://research.nvidia.com/person/christoph-schied), [Alexander Keller](https://research.nvidia.com/person/alex-keller)  
-> _[arXiv:2201.05989 [cs.CV]](https://arxiv.org/abs/2201.05989), Jan 2022_  
+> _ACM Transactions on Graphics (__SIGGRAPH__), July 2022_  
 > __[Website](https://nvlabs.github.io/instant-ngp/)&nbsp;/ [Paper](https://nvlabs.github.io/instant-ngp/assets/mueller2022instant.pdf)&nbsp;/ [Code](https://github.com/NVlabs/instant-ngp)&nbsp;/ [Video](https://nvlabs.github.io/instant-ngp/assets/mueller2022instant.mp4)&nbsp;/ [BibTeX](https://nvlabs.github.io/instant-ngp/assets/mueller2022instant.bib)__
-
-> __Real-time Neural Radiance Caching for Path Tracing__  
-> [Thomas Müller](https://tom94.net), [Fabrice Rousselle](https://research.nvidia.com/person/fabrice-rousselle), [Jan Novák](http://jannovak.info), [Alexander Keller](https://research.nvidia.com/person/alex-keller)  
-> _ACM Transactions on Graphics (Proceedings of SIGGRAPH), vol. 40, no. 4, pp. 36:1–36:16, Aug 2021_  
-> __[Paper](https://tom94.net/data/publications/mueller21realtime/mueller21realtime.pdf)&nbsp;/ [GTC talk](https://gtc21.event.nvidia.com/media/Fully%20Fused%20Neural%20Network%20for%20Radiance%20Caching%20in%20Real%20Time%20Rendering%20%5BE31307%5D/1_liqy6k1c)&nbsp;/ [Video](https://tom94.net/data/publications/mueller21realtime/mueller21realtime.mp4)&nbsp;/ [Interactive results viewer](https://tom94.net/data/publications/mueller21realtime/interactive-viewer/)&nbsp;/ [BibTeX](https://tom94.net/data/publications/mueller21realtime/mueller21realtime.bib)__
 
 > __Extracting Triangular 3D Models, Materials, and Lighting From Images__  
 > [Jacob Munkberg](https://research.nvidia.com/person/jacob-munkberg), [Jon Hasselgren](https://research.nvidia.com/person/jon-hasselgren), [Tianchang Shen](http://www.cs.toronto.edu/~shenti11/), [Jun Gao](http://www.cs.toronto.edu/~jungao/), [Wenzheng Chen](http://www.cs.toronto.edu/~wenzheng/), [Alex Evans](https://research.nvidia.com/person/alex-evans), [Thomas Müller](https://tom94.net), [Sanja Fidler](https://www.cs.toronto.edu/~fidler/)  
-> _[arXiv:2111.12503 [cs.CV]](https://arxiv.org/abs/2111.12503)_, Nov 2021  
+> __CVPR (Oral)__, June 2022  
 > __[Website](https://nvlabs.github.io/nvdiffrec/)&nbsp;/ [Paper](https://nvlabs.github.io/nvdiffrec/assets/paper.pdf)&nbsp;/ [Video](https://nvlabs.github.io/nvdiffrec/assets/video.mp4)&nbsp;/ [BibTeX](https://nvlabs.github.io/nvdiffrec/assets/bib.txt)__
 
+> __Real-time Neural Radiance Caching for Path Tracing__  
+> [Thomas Müller](https://tom94.net), [Fabrice Rousselle](https://research.nvidia.com/person/fabrice-rousselle), [Jan Novák](http://jannovak.info), [Alexander Keller](https://research.nvidia.com/person/alex-keller)  
+> _ACM Transactions on Graphics (__SIGGRAPH__), August 2021_  
+> __[Paper](https://tom94.net/data/publications/mueller21realtime/mueller21realtime.pdf)&nbsp;/ [GTC talk](https://gtc21.event.nvidia.com/media/Fully%20Fused%20Neural%20Network%20for%20Radiance%20Caching%20in%20Real%20Time%20Rendering%20%5BE31307%5D/1_liqy6k1c)&nbsp;/ [Video](https://tom94.net/data/publications/mueller21realtime/mueller21realtime.mp4)&nbsp;/ [Interactive results viewer](https://tom94.net/data/publications/mueller21realtime/interactive-viewer/)&nbsp;/ [BibTeX](https://tom94.net/data/publications/mueller21realtime/mueller21realtime.bib)__
+
+
+As well as the following software:
+
+> __NerfAcc: A General NeRF Accleration Toolbox__  
+> [Ruilong Li](https://www.liruilong.cn/), [Matthew Tancik](https://www.matthewtancik.com/about-me), [Angjoo Kanazawa](https://people.eecs.berkeley.edu/~kanazawa/)  
+> __https://github.com/KAIR-BAIR/nerfacc__
+
+> __Nerfstudio: A Framework for Neural Radiance Field Development__  
+> [Matthew Tancik*](https://www.matthewtancik.com/about-me), [Ethan Weber*](https://ethanweber.me/), [Evonne Ng*](http://people.eecs.berkeley.edu/~evonne_ng/), [Ruilong Li](https://www.liruilong.cn/), Brent Yi, Terrance Wang, Alexander Kristoffersen, Jake Austin, Kamyar Salahi, Abhik Ahuja, David McAllister, [Angjoo Kanazawa](https://people.eecs.berkeley.edu/~kanazawa/)  
+> __https://github.com/nerfstudio-project/nerfstudio__
+
+Please feel free to make a pull request if your publication or software is not listed.
 
 ## Acknowledgments
 

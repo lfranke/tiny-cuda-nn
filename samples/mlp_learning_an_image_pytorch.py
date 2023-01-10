@@ -57,13 +57,15 @@ IMAGES_DIR = os.path.join(DATA_DIR, "images")
 class Image(torch.nn.Module):
 	def __init__(self, filename, device):
 		super(Image, self).__init__()
-		self.data = torch.from_numpy(read_image(filename)).float().to(device)
+		self.data = read_image(filename)
+		self.shape = self.data.shape
+		self.data = torch.from_numpy(self.data).float().to(device)
 
 	def forward(self, xs):
 		with torch.no_grad():
 			# Bilinearly filtered lookup from the image. Not super fast,
 			# but less than ~20% of the overall runtime of this example.
-			shape = self.data.shape
+			shape = self.shape
 
 			xs = xs * torch.tensor([shape[1], shape[0]], device=xs.device).float()
 			indices = xs.long()
@@ -96,7 +98,7 @@ if __name__ == "__main__":
 	print("================================================================")
 	print("This script replicates the behavior of the native CUDA example  ")
 	print("mlp_learning_an_image.cu using tiny-cuda-nn's PyTorch extension.")
-	print("This extension >> runs ~2x slower than native << as of now.     ")
+	print("This extension >> runs ~3x slower than native << as of now.     ")
 	print("================================================================")
 
 	device = torch.device("cuda")
@@ -108,7 +110,7 @@ if __name__ == "__main__":
 	image = Image(args.image, device)
 	n_channels = image.data.shape[2]
 
-	model = tcnn.NetworkWithInputEncoding(n_input_dims=2, n_output_dims=n_channels, encoding_config=config["encoding"], network_config=config["network"])
+	model = tcnn.NetworkWithInputEncoding(n_input_dims=2, n_output_dims=n_channels, encoding_config=config["encoding"], network_config=config["network"]).to(device)
 	print(model)
 
 	#===================================================================================================
@@ -129,8 +131,8 @@ if __name__ == "__main__":
 	half_dx =  0.5 / resolution[0]
 	half_dy =  0.5 / resolution[1]
 	xs = torch.linspace(half_dx, 1-half_dx, resolution[0], device=device)
-	ys = torch.linspace(half_dx, 1-half_dx, resolution[1], device=device)
-	xv, yv = torch.meshgrid([xs, ys], indexing="ij")
+	ys = torch.linspace(half_dy, 1-half_dy, resolution[1], device=device)
+	xv, yv = torch.meshgrid([xs, ys])
 
 	xy = torch.stack((yv.flatten(), xv.flatten())).t()
 
@@ -139,14 +141,21 @@ if __name__ == "__main__":
 	write_image(path, image(xy).reshape(img_shape).detach().cpu().numpy())
 	print("done.")
 
-	prev_time = time.time()
+	prev_time = time.perf_counter()
 
 	batch_size = 2**16
 	interval = 10
 
 	print(f"Beginning optimization with {args.n_steps} training steps.")
 
-	traced_image = torch.jit.trace(image, torch.rand([batch_size, 2], device=device, dtype=torch.float32))
+	try:
+		batch = torch.rand([batch_size, 2], device=device, dtype=torch.float32)
+		traced_image = torch.jit.trace(image, batch)
+		traced_image(batch)
+	except:
+		# If tracing causes an error, fall back to regular execution
+		print(f"WARNING: PyTorch JIT trace failed. Performance will be slightly worse than regular.")
+		traced_image = image
 
 	for i in range(args.n_steps):
 		batch = torch.rand([batch_size, 2], device=device, dtype=torch.float32)
@@ -163,7 +172,7 @@ if __name__ == "__main__":
 		if i % interval == 0:
 			loss_val = loss.item()
 			torch.cuda.synchronize()
-			elapsed_time = time.time() - prev_time
+			elapsed_time = time.perf_counter() - prev_time
 			print(f"Step#{i}: loss={loss_val} time={int(elapsed_time*1000000)}[µs]")
 
 			path = f"{i}.jpg"
@@ -173,7 +182,7 @@ if __name__ == "__main__":
 			print("done.")
 
 			# Ignore the time spent saving the image
-			prev_time = time.time()
+			prev_time = time.perf_counter()
 
 			if i > 0 and interval < 1000:
 				interval *= 10
@@ -183,3 +192,5 @@ if __name__ == "__main__":
 		with torch.no_grad():
 			write_image(args.result_filename, model(xy).reshape(img_shape).clamp(0.0, 1.0).detach().cpu().numpy())
 		print("done.")
+
+	tcnn.free_temporary_memory()

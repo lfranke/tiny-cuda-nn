@@ -6,9 +6,33 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION is strictly prohibited.
 
+import gc
+import importlib
 import torch
-from torch.autograd.function import once_differentiable
-from tinycudann_bindings import _C
+
+ALL_COMPUTE_CAPABILITIES = [20, 21, 30, 35, 37, 50, 52, 53, 60, 61, 62, 70, 72, 75, 80, 86, 89, 90]
+
+if not torch.cuda.is_available():
+	raise EnvironmentError("Unknown compute capability. Ensure PyTorch with CUDA support is installed.")
+major, minor = torch.cuda.get_device_capability()
+system_compute_capability = major * 10 + minor
+
+# Try to import the highest compute capability version of tcnn that
+# we can find and is compatible with the system's compute capability.
+_C = None
+for cc in reversed(ALL_COMPUTE_CAPABILITIES):
+	if cc > system_compute_capability:
+		# incompatible
+		continue
+
+	try:
+		_C = importlib.import_module(f"tinycudann_bindings_{cc}._C")
+		break
+	except ImportError:
+		pass
+
+if _C is None:
+	raise EnvironmentError(f"Could not find compatible tinycudann extension for compute capability {system_compute_capability}.")
 
 def _torch_precision(tcnn_precision):
 	if tcnn_precision == _C.Precision.Fp16:
@@ -19,7 +43,18 @@ def _torch_precision(tcnn_precision):
 		raise ValueError(f"Unknown precision {tcnn_precision}")
 
 def free_temporary_memory():
+	# Ensure all Python objects (potentially pointing
+	# to temporary TCNN allocations) are cleaned up.
+	gc.collect()
 	_C.free_temporary_memory()
+
+def null_tensor_like(tensor):
+	return torch.empty([], dtype=tensor.dtype, device=tensor.device)
+
+def null_tensor_to_none(tensor):
+	if len(tensor.shape) == 0:
+		return None
+	return tensor
 
 class _module_function(torch.autograd.Function):
 	@staticmethod
@@ -46,9 +81,9 @@ class _module_function(torch.autograd.Function):
 			doutput = doutput.cuda()
 
 		input, params, output = ctx.saved_tensors
-		input_grad, weight_grad = _module_function_backward.apply(ctx, doutput, input, params, output)
+		input_grad, params_grad = _module_function_backward.apply(ctx, doutput, input, params, output)
 
-		return None, input_grad, weight_grad, None
+		return None, null_tensor_to_none(input_grad), null_tensor_to_none(params_grad), None
 
 class _module_function_backward(torch.autograd.Function):
 	@staticmethod
@@ -57,25 +92,25 @@ class _module_function_backward(torch.autograd.Function):
 		ctx.save_for_backward(input, params, doutput)
 		with torch.no_grad():
 			scaled_grad = doutput * ctx_fwd.loss_scale
-			input_grad, weight_grad = ctx_fwd.native_tcnn_module.bwd(ctx_fwd.native_ctx, input, params, output, scaled_grad)
-			input_grad = None if input_grad is None else (input_grad / ctx_fwd.loss_scale)
-			weight_grad = None if weight_grad is None else (weight_grad / ctx_fwd.loss_scale)
-		return input_grad, weight_grad
+			input_grad, params_grad = ctx_fwd.native_tcnn_module.bwd(ctx_fwd.native_ctx, input, params, output, scaled_grad)
+			input_grad = null_tensor_like(input) if input_grad is None else (input_grad / ctx_fwd.loss_scale)
+			params_grad = null_tensor_like(params) if params_grad is None else (params_grad / ctx_fwd.loss_scale)
+		return input_grad, params_grad
 
 	@staticmethod
-	def backward(ctx, dinput_grad, dweight_grad):
+	def backward(ctx, dinput_grad, dparams_grad):
 		# NOTE: currently support:
 		#       ✓   d(dL_dinput)_d(dL_doutput)  doutput_grad
-		#       ✓   d(dL_dinput)_d(params)      weight_grad
+		#       ✓   d(dL_dinput)_d(params)      params_grad
 		#       ✓   d(dL_dinput)_d(input)       input_grad
 		#       x   d(dL_dparam)_d(...)
 		input, params, doutput = ctx.saved_tensors
-		# assert dweight_grad is None, "currently do not support 2nd-order gradients from gradient of grid"
+		# assert dparams_grad is None, "currently do not support 2nd-order gradients from gradient of grid"
 		with torch.enable_grad():
 			# NOTE: preserves requires_grad info (this function is in no_grad() context by default when invoking loss.backward())
 			doutput = doutput * ctx.ctx_fwd.loss_scale
 		with torch.no_grad():
-			doutput_grad, weight_grad, input_grad = ctx.ctx_fwd.native_tcnn_module.bwd_bwd_input(
+			doutput_grad, params_grad, input_grad = ctx.ctx_fwd.native_tcnn_module.bwd_bwd_input(
 				ctx.ctx_fwd.native_ctx,
 				input,
 				params,
@@ -84,13 +119,13 @@ class _module_function_backward(torch.autograd.Function):
 			)
 			# NOTE: be cautious when multiplying and dividing loss_scale
 			#       doutput_grad uses dinput_grad
-			#       weight_grad  uses dinput_grad * doutput
+			#       params_grad  uses dinput_grad * doutput
 			#       input_grad   uses dinput_grad * doutput
-			weight_grad = None if weight_grad is None else (weight_grad / ctx.ctx_fwd.loss_scale)
+			params_grad = None if params_grad is None else (params_grad / ctx.ctx_fwd.loss_scale)
 			input_grad = None if input_grad is None else (input_grad / ctx.ctx_fwd.loss_scale)
 
 		# ctx_fwd,   doutput,      input,      params,      output
-		return None, doutput_grad, input_grad, weight_grad, None
+		return None, doutput_grad, input_grad, params_grad, None
 
 class Module(torch.nn.Module):
 	def __init__(self, seed=1337):
@@ -168,6 +203,9 @@ class NetworkWithInputEncoding(Module):
 		Seed for pseudorandom parameter initialization
 	"""
 	def __init__(self, n_input_dims, n_output_dims, encoding_config, network_config, seed=1337):
+		if not _C.has_networks():
+			raise RuntimeError(f"Cannot create `NetworkWithInputEncoding` because tiny-cuda-nn was not compiled with neural network support.")
+
 		self.n_input_dims = n_input_dims
 		self.n_output_dims = n_output_dims
 		self.encoding_config = encoding_config
@@ -201,6 +239,9 @@ class Network(Module):
 		Seed for pseudorandom parameter initialization
 	"""
 	def __init__(self, n_input_dims, n_output_dims, network_config, seed=1337):
+		if not _C.has_networks():
+			raise RuntimeError(f"Cannot create `Network` because tiny-cuda-nn was not compiled with neural network support.")
+
 		self.n_input_dims = n_input_dims
 		self.n_output_dims = n_output_dims
 		self.network_config = network_config

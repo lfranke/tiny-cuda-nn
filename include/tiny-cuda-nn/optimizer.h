@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   optimizer.h
@@ -42,14 +41,22 @@ class Optimizer : public ObjectWithMutableHyperparams {
 public:
 	virtual ~Optimizer() {}
 
-	virtual void allocate(std::shared_ptr<ParametricObject<T>> target) = 0;
-        virtual void allocate2(int size) { throw std::runtime_error("not implemented"); }
+	virtual void allocate(uint32_t n_weights, const std::vector<std::pair<uint32_t, uint32_t>>& layer_sizes = {}) = 0;
+	void allocate(const std::shared_ptr<ParametricObject<T>>& target) {
+		allocate(target->n_params(), target->layer_sizes());
+	};
+
 	virtual void step(cudaStream_t stream, float loss_scale, float* weights_full_precision, T* weights, const T* gradients) = 0;
 	virtual float learning_rate() const = 0;
 	virtual void set_learning_rate(float val) = 0;
 	virtual uint32_t step() const = 0;
 	virtual uint32_t n_weights() const = 0;
 	virtual T* custom_weights() const = 0;
+
+	virtual uint32_t n_nested() const = 0;
+	virtual const std::shared_ptr<Optimizer<T>>& nested(uint32_t idx = 0) const {
+		throw std::runtime_error{"Optimizer does not support nesting."};
+	}
 
 	virtual json serialize() const { return {}; }
 	virtual void deserialize(const json& data) { }

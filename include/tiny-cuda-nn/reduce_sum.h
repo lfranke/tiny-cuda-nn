@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   reduce_sum.h
@@ -43,7 +42,7 @@ uint32_t reduce_sum_workspace_size(uint32_t n_elements);
 
 template <typename T>
 inline __device__ T warp_reduce(T val) {
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (int offset = warpSize/2; offset > 0; offset /= 2) {
 		val += __shfl_xor_sync(0xffffffff, val, offset);
 	}
@@ -149,6 +148,7 @@ float reduce_sum(T* device_pointer, F fun, uint32_t n_elements, cudaStream_t str
 
 	float sum;
 	CUDA_CHECK_THROW(cudaMemcpyAsync(&sum, workspace_data, sizeof(float), cudaMemcpyDeviceToHost, stream));
+	CUDA_CHECK_THROW(cudaStreamSynchronize(stream));
 	return sum;
 }
 

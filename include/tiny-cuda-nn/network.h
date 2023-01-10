@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   network.h
@@ -34,12 +33,6 @@
 #include <tiny-cuda-nn/object.h>
 
 TCNN_NAMESPACE_BEGIN
-
-enum class WeightUsage {
-	Inference,
-	Forward,
-	Backward,
-};
 
 Activation string_to_activation(const std::string& activation_name);
 std::string to_string(Activation activation);

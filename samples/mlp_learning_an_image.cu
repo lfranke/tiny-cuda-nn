@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   mlp-learning-an-image.cu
@@ -174,14 +173,8 @@ int main(int argc, char* argv[]) {
 		texDesc.addressMode[1] = cudaAddressModeClamp;
 		texDesc.addressMode[2] = cudaAddressModeClamp;
 
-		cudaResourceViewDesc viewDesc;
-		memset(&viewDesc, 0, sizeof(viewDesc));
-		viewDesc.format = cudaResViewFormatFloat4;
-		viewDesc.width = width;
-		viewDesc.height = height;
-
 		cudaTextureObject_t texture;
-		CUDA_CHECK_THROW(cudaCreateTextureObject(&texture, &resDesc, &texDesc, &viewDesc));
+		CUDA_CHECK_THROW(cudaCreateTextureObject(&texture, &resDesc, &texDesc, nullptr));
 
 		// Third step: sample a reference image to dump to disk. Visual comparison of this reference image and the learned
 		//             function will be eventually possible.
@@ -288,7 +281,7 @@ int main(int argc, char* argv[]) {
 
 				if (visualize_learned_func) {
 					network->inference(inference_stream, inference_batch, prediction);
-					auto filename = std::to_string(i) + ".jpg";
+					auto filename = fmt::format("{}.jpg", i);
 					std::cout << "Writing '" << filename << "'... ";
 					save_image(prediction.data(), sampling_width, sampling_height, 3, n_output_dims, filename);
 					std::cout << "done." << std::endl;
@@ -311,6 +304,11 @@ int main(int argc, char* argv[]) {
 			network->inference(inference_stream, inference_batch, prediction);
 			save_image(prediction.data(), sampling_width, sampling_height, 3, n_output_dims, argv[4]);
 		}
+
+		free_all_gpu_memory_arenas();
+
+		// If only the memory arenas pertaining to a single stream are to be freed, use
+		//free_gpu_memory_arena(stream);
 	} catch (std::exception& e) {
 		std::cout << "Uncaught exception: " << e.what() << std::endl;
 	}

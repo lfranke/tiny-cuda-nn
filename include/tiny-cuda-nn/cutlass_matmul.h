@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   cutlass_matmul.h
@@ -52,25 +51,12 @@
 
 TCNN_NAMESPACE_BEGIN
 
-#define CUTLASS_CHECK(status)                                                                      \
-{                                                                                                  \
-	cutlass::Status error = status;                                                                \
-	if (error != cutlass::Status::kSuccess) {                                                      \
-		std::cerr << "Got cutlass error: " << cutlassGetStatusString(error) << " at: " << __LINE__ \
-		          << std::endl;                                                                    \
-		exit(EXIT_FAILURE);                                                                        \
-	}                                                                                              \
-}
-
-#define CUDA_CHECK(status)                                                \
-{                                                                         \
-	cudaError_t error = status;                                           \
-	if (error != cudaSuccess) {                                           \
-		std::cerr << "Got bad cuda status: " << cudaGetErrorString(error) \
-		          << " at line: " << __LINE__ << std::endl;               \
-		exit(EXIT_FAILURE);                                               \
-	}                                                                     \
-}
+#define CUTLASS_CHECK_THROW(x)                                                                                        \
+	do {                                                                                                                   \
+		cutlass::Status error = x;                                                                                    \
+		if (error != cutlass::Status::kSuccess)                                                                            \
+			throw std::runtime_error(std::string(FILE_LINE " " #x " failed with error ") + cutlassGetStatusString(error)); \
+	} while(0)
 
 using SmArch = std::conditional_t<MIN_GPU_ARCH >= 80,
 	std::conditional_t<std::is_same<network_precision_t, float>::value, cutlass::arch::Sm75, cutlass::arch::Sm80>,
@@ -339,11 +325,11 @@ void fc_multiply_impl(cudaStream_t stream, const typename Gemm::Arguments& args)
 	// Initialize CUTLASS kernel with arguments and workspace pointer
 	auto workspace = allocate_workspace(stream, workspace_size);
 	cutlass::Status status = gemm_op.initialize(args, workspace.data(), stream);
-	CUTLASS_CHECK(status);
+	CUTLASS_CHECK_THROW(status);
 
 	// Launch initialized CUTLASS kernel
 	status = gemm_op(stream);
-	CUTLASS_CHECK(status);
+	CUTLASS_CHECK_THROW(status);
 }
 
 template <class Gemm>
@@ -357,11 +343,11 @@ void fc_multiply_split_k_impl(cudaStream_t stream, const typename Gemm::Argument
 	// Initialize CUTLASS kernel with arguments and workspace pointer
 	auto workspace = allocate_workspace(stream, workspace_size);
 	cutlass::Status status = gemm_op.initialize(args, workspace.data());
-	CUTLASS_CHECK(status);
+	CUTLASS_CHECK_THROW(status);
 
 	// Launch initialized CUTLASS kernel
 	status = gemm_op(stream);
-	CUTLASS_CHECK(status);
+	CUTLASS_CHECK_THROW(status);
 }
 
 template <typename config, typename TypeA, MatrixLayout LayoutA, typename TypeB, MatrixLayout LayoutB, typename TypeC, MatrixLayout LayoutC, typename TypeD, MatrixLayout LayoutD>
@@ -387,11 +373,11 @@ void fc_multiply(cudaStream_t stream, const GPUMatrix<TypeA, LayoutA>& A, const 
 	const int N = B.n();
 
 	if (C.m() != M || C.n() != N) {
-		throw std::runtime_error(std::string("Matrix C has incorrect size ") + std::to_string(C.m()) + "," + std::to_string(C.n()) + "!=" + std::to_string(M) + "," + std::to_string(N));
+		throw std::runtime_error{fmt::format("Matrix C has incorrect size {}x{} != {}x{}", C.m(), C.n(), M, N)};
 	}
 
 	if (D.m() != M || D.n() != N) {
-		throw std::runtime_error(std::string("Matrix D has incorrect size ") + std::to_string(D.m()) + "," + std::to_string(D.n()) + "!=" + std::to_string(M) + "," + std::to_string(N));
+		throw std::runtime_error{fmt::format("Matrix D has incorrect size {}x{} != {}x{}", D.m(), D.n(), M, N)};
 	}
 
 	if (transfer) {
@@ -473,11 +459,11 @@ void fc_multiply_split_k(cudaStream_t stream, const GPUMatrix<TypeA, LayoutA>& A
 	const int N = B.n();
 
 	if (C.m() != M || C.n() != N) {
-		throw std::runtime_error(std::string("Matrix C has incorrect size ") + std::to_string(C.m()) + "," + std::to_string(C.n()) + "!=" + std::to_string(M) + "," + std::to_string(N));
+		throw std::runtime_error{fmt::format("Matrix C has incorrect size {}x{} != {}x{}", C.m(), C.n(), M, N)};
 	}
 
 	if (D.m() != M || D.n() != N) {
-		throw std::runtime_error(std::string("Matrix D has incorrect size ") + std::to_string(D.m()) + "," + std::to_string(D.n()) + "!=" + std::to_string(M) + "," + std::to_string(N));
+		throw std::runtime_error{fmt::format("Matrix D has incorrect size {}x{} != {}x{}", D.m(), D.n(), M, N)};
 	}
 
 	using Gemm = SplitKGemm<SumOp<MatmulTypeAccumulator>, config, MatmulTypeCompute, CutlassLayoutA, MatmulTypeCompute, CutlassLayoutB, MatmulTypeAccumulator, CutlassLayoutC>;

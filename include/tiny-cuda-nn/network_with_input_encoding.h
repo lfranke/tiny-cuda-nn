@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   network_with_input_encoding.h
@@ -74,7 +73,7 @@ public:
 
 		forward->network_input = GPUMatrixDynamic<T>{m_encoding->padded_output_width(), input.n(), stream, m_encoding->preferred_output_layout()};
 		forward->encoding_ctx = m_encoding->forward(stream, input, &forward->network_input, use_inference_params, prepare_input_gradients);
-		forward->network_ctx = m_network->forward(stream, forward->network_input, output, use_inference_params, prepare_input_gradients);
+		forward->network_ctx = m_network->forward(stream, forward->network_input, output, use_inference_params, true);
 
 		return forward;
 	}
@@ -111,48 +110,21 @@ public:
 		}
 	}
 
-	void set_params(T* params, T* inference_params, T* backward_params, T* gradients) override {
+	void set_params_impl(T* params, T* inference_params, T* gradients) override {
 		size_t offset = 0;
-		m_network->set_params(
-			params + offset,
-			inference_params + offset,
-			backward_params + offset,
-			gradients + offset
-		);
+		m_network->set_params(params + offset, inference_params + offset, gradients + offset);
 		offset += m_network->n_params();
 
-		m_encoding->set_params(
-			params + offset,
-			inference_params + offset,
-			backward_params + offset,
-			gradients + offset
-		);
+		m_encoding->set_params(params + offset, inference_params + offset, gradients + offset);
 		offset += m_encoding->n_params();
 	}
 
-	void initialize_params(pcg32& rnd, float* params_full_precision, T* params, T* inference_params, T* backward_params, T* gradients, float scale = 1) override {
-		size_t offset = 0;
-		m_network->initialize_params(
-			rnd,
-			params_full_precision + offset,
-			params + offset,
-			inference_params + offset,
-			backward_params + offset,
-			gradients + offset,
-			scale
-		);
-		offset += m_network->n_params();
+	void initialize_params(pcg32& rnd, float* params_full_precision, float scale = 1) override {
+		m_network->initialize_params(rnd, params_full_precision, scale);
+		params_full_precision += m_network->n_params();
 
-		m_encoding->initialize_params(
-			rnd,
-			params_full_precision + offset,
-			params + offset,
-			inference_params + offset,
-			backward_params + offset,
-			gradients + offset,
-			scale
-		);
-		offset += m_encoding->n_params();
+		m_encoding->initialize_params(rnd, params_full_precision, scale);
+		params_full_precision += m_encoding->n_params();
 	}
 
 	size_t n_params() const override {

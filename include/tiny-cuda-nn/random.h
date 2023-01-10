@@ -20,7 +20,6 @@
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TOR (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *//*
  */
 
 /** @file   random.h
@@ -71,7 +70,7 @@ __global__ void generate_random_kernel(const size_t n_elements, RNG rng, T* __re
 
 	rng.advance(i*N_TO_GENERATE);
 
-	#pragma unroll
+	TCNN_PRAGMA_UNROLL
 	for (size_t j = 0; j < N_TO_GENERATE; ++j) {
 		const size_t idx = i + n_threads * j;
 		if (idx >= n_elements) {
