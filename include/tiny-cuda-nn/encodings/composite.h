@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -403,6 +403,15 @@ public:
 		return m_nested.empty() ? AoS : m_nested.front()->preferred_output_layout();
 	}
 
+	size_t n_nested() const override {
+		return m_nested.size();
+	}
+
+	const std::shared_ptr<Encoding<T>>& nested(size_t idx = 0) const {
+		CHECK_THROW(idx < m_nested.size());
+		return m_nested[idx];
+	}
+
 	void set_params_impl(T* params, T* inference_params, T* gradients) override {
 		size_t offset = 0;
 		for (auto& nested : m_nested) {
@@ -444,7 +453,7 @@ private:
 		GPUMatrixDynamic<T> to_reduce;
 	};
 
-	std::vector<std::unique_ptr<Encoding<T>>> m_nested;
+	std::vector<std::shared_ptr<Encoding<T>>> m_nested;
 	std::vector<uint32_t> m_dims_to_encode_begin;
 	uint32_t m_n_dims_to_encode;
 	ReductionType m_reduction_type = ReductionType::Concatenation;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -75,6 +75,11 @@ public:
 
 	virtual MatrixLayout preferred_output_layout() const = 0;
 
+	virtual size_t n_nested() const { return 0; }
+	virtual const std::shared_ptr<Encoding<T>>& nested(size_t idx = 0) const {
+		throw std::runtime_error{"Encoding does not support nesting."};
+	}
+
 	// By default, an encoding has no parameters
 	void set_params_impl(T* params, T* inference_params, T* gradients) override { }
 	void initialize_params(pcg32& rnd, float* params_full_precision, float scale = 1) override { }
@@ -89,5 +94,8 @@ public:
 
 template <typename T>
 Encoding<T>* create_encoding(uint32_t n_dims_to_encode, const json& params, uint32_t alignment = 8);
+
+template <typename T>
+void register_encoding(const std::string& name, const std::function<Encoding<T>*(uint32_t, const json&)>& factory);
 
 TCNN_NAMESPACE_END

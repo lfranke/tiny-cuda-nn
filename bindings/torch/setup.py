@@ -1,12 +1,31 @@
 import os
 
-import torch
+import re
 from setuptools import setup
-from torch.utils.cpp_extension import BuildExtension, CUDAExtension
+from pkg_resources import parse_version
+import subprocess
 import sys
+import torch
+from torch.utils.cpp_extension import BuildExtension, CUDAExtension
 
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 ROOT_DIR = os.path.dirname(os.path.dirname(SCRIPT_DIR))
+
+def min_supported_compute_capability(cuda_version):
+	if cuda_version >= parse_version("12.0"):
+		return 50
+	else:
+		return 20
+
+def max_supported_compute_capability(cuda_version):
+	if cuda_version < parse_version("11.0"):
+		return 75
+	elif cuda_version < parse_version("11.1"):
+		return 80
+	elif cuda_version < parse_version("11.8"):
+		return 86
+	else:
+		return 90
 
 # Find version of tinycudann by scraping CMakeLists.txt
 with open(os.path.join(ROOT_DIR, "CMakeLists.txt"), "r") as cmakelists:
@@ -29,8 +48,6 @@ elif torch.cuda.is_available():
 else:
 	raise EnvironmentError("Unknown compute capability. Specify the target compute capabilities in the TCNN_CUDA_ARCHITECTURES environment variable or install PyTorch with the CUDA backend to detect it automatically.")
 
-min_compute_capability = min(compute_capabilities)
-
 include_networks = True
 if "--no-networks" in sys.argv:
 	include_networks = False
@@ -52,8 +69,34 @@ if os.name == "nt":
 		if cl_path is None:
 			raise RuntimeError("Could not locate a supported Microsoft Visual C++ installation")
 		os.environ["PATH"] += ";" + cl_path
+	else:
+		# cl.exe was found in PATH, so we can assume that the user is already in a developer command prompt
+		# In this case, BuildExtensions requires the following environment variable to be set such that it
+		# won't try to activate a developer command prompt a second time.
+		os.environ["DISTUTILS_USE_SDK"] = "1"
 
-nvcc_flags = [
+# Get CUDA version and make sure the targeted compute capability is compatible
+if os.system("nvcc --version") == 0:
+	nvcc_out = subprocess.check_output(["nvcc", "--version"]).decode()
+	cuda_version = re.search(r"release (\S+),", nvcc_out)
+
+	if cuda_version:
+		cuda_version = parse_version(cuda_version.group(1))
+		print(f"Detected CUDA version {cuda_version}")
+		supported_compute_capabilities = [
+			cc for cc in compute_capabilities if cc >= min_supported_compute_capability(cuda_version) and cc <= max_supported_compute_capability(cuda_version)
+		]
+
+		if not supported_compute_capabilities:
+			supported_compute_capabilities = [max_supported_compute_capability(cuda_version)]
+
+		if supported_compute_capabilities != compute_capabilities:
+			print(f"WARNING: Compute capabilities {compute_capabilities} are not all supported by the installed CUDA version {cuda_version}. Targeting {supported_compute_capabilities} instead.")
+			compute_capabilities = supported_compute_capabilities
+
+min_compute_capability = min(compute_capabilities)
+
+base_nvcc_flags = [
 	"-std=c++14",
 	"--extended-lambda",
 	"--expt-relaxed-constexpr",
@@ -63,23 +106,16 @@ nvcc_flags = [
 	"-U__CUDA_NO_HALF_CONVERSIONS__",
 	"-U__CUDA_NO_HALF2_OPERATORS__",
 ]
-nvcc_flags += [f"-gencode=arch=compute_{compute_capability},code={code}_{compute_capability}" for code in ["compute", "sm"] for compute_capability in compute_capabilities]
 
 if os.name == "posix":
-	cflags = ["-std=c++14"]
-	nvcc_flags += [
-		"-Xcompiler=-mf16c",
+	base_cflags = ["-std=c++14"]
+	base_nvcc_flags += [
 		"-Xcompiler=-Wno-float-conversion",
 		"-Xcompiler=-fno-strict-aliasing",
 	]
 elif os.name == "nt":
-	cflags = ["/std:c++14"]
+	base_cflags = ["/std:c++14"]
 
-definitions = [
-	f"-DTCNN_MIN_GPU_ARCH={min_compute_capability}"
-]
-nvcc_flags += definitions
-cflags += definitions
 
 # Some containers set this to contain old architectures that won't compile. We only need the one installed in the machine.
 os.environ["TORCH_CUDA_ARCH_LIST"] = ""
@@ -87,7 +123,8 @@ os.environ["TORCH_CUDA_ARCH_LIST"] = ""
 # List of sources.
 bindings_dir = os.path.dirname(__file__)
 root_dir = os.path.abspath(os.path.join(bindings_dir, "../.."))
-source_files = [
+base_definitions = []
+base_source_files = [
 	"tinycudann/bindings.cpp",
 	"../../dependencies/fmt/src/format.cc",
 	"../../dependencies/fmt/src/os.cc",
@@ -98,31 +135,41 @@ source_files = [
 ]
 
 if include_networks:
-	source_files += [
+	base_source_files += [
 		"../../src/network.cu",
 		"../../src/cutlass_mlp.cu",
 	]
-
-	if min_compute_capability > 70:
-		source_files.append("../../src/fully_fused_mlp.cu")
 else:
-	nvcc_flags.append("-DTCNN_NO_NETWORKS")
-	cflags.append("-DTCNN_NO_NETWORKS")
+	base_definitions.append("-DTCNN_NO_NETWORKS")
 
-ext = CUDAExtension(
-	name=f"tinycudann_bindings_{min_compute_capability}._C",
-	sources=source_files,
-	include_dirs=[
-		"%s/include" % root_dir,
-		"%s/dependencies" % root_dir,
-		"%s/dependencies/cutlass/include" % root_dir,
-		"%s/dependencies/cutlass/tools/util/include" % root_dir,
-		"%s/dependencies/fmt/include" % root_dir,
-	],
-	extra_compile_args={"cxx": cflags, "nvcc": nvcc_flags},
-	libraries=["cuda", "cudadevrt", "cudart_static"],
-)
-ext_modules = [ext]
+def make_extension(compute_capability):
+	nvcc_flags = base_nvcc_flags + [f"-gencode=arch=compute_{compute_capability},code={code}_{compute_capability}" for code in ["compute", "sm"]]
+	definitions = base_definitions + [f"-DTCNN_MIN_GPU_ARCH={compute_capability}"]
+
+	if include_networks and compute_capability > 70:
+		source_files = base_source_files + ["../../src/fully_fused_mlp.cu"]
+	else:
+		source_files = base_source_files
+
+	nvcc_flags = nvcc_flags + definitions
+	cflags = base_cflags + definitions
+
+	ext = CUDAExtension(
+		name=f"tinycudann_bindings._{compute_capability}_C",
+		sources=source_files,
+		include_dirs=[
+			"%s/include" % root_dir,
+			"%s/dependencies" % root_dir,
+			"%s/dependencies/cutlass/include" % root_dir,
+			"%s/dependencies/cutlass/tools/util/include" % root_dir,
+			"%s/dependencies/fmt/include" % root_dir,
+		],
+		extra_compile_args={"cxx": cflags, "nvcc": nvcc_flags},
+		libraries=["cuda", "cudadevrt", "cudart_static"],
+	)
+	return ext
+
+ext_modules = [make_extension(comp) for comp in compute_capabilities]
 
 setup(
 	name="tinycudann",

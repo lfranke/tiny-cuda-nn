@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -72,6 +72,11 @@ public:
 
 	void wait_for(cudaEvent_t event) {
 		CUDA_CHECK_THROW(cudaStreamWaitEvent(m_stream, event, 0));
+	}
+
+	void wait_for(cudaStream_t stream) {
+		CUDA_CHECK_THROW(cudaEventRecord(m_event, stream));
+		wait_for(m_event);
 	}
 
 	void signal(cudaStream_t stream) {

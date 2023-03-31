@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020-2022, NVIDIA CORPORATION.  All rights reserved.
+ * Copyright (c) 2020-2023, NVIDIA CORPORATION.  All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification, are permitted
  * provided that the following conditions are met:
@@ -69,13 +69,30 @@ struct VectorFragment
 
 static constexpr float clamp_value = 0.02f;
 
-static constexpr float K_ACT               = 10.0f;
 static constexpr float SOFTPLUS_BETA2      = 2.f;
 static constexpr float SOFTPLUS_THRESHOLD2 = 20.f / SOFTPLUS_BETA2;
 
 static constexpr float SOFTPLUS_BETA4      = 4.f;
 static constexpr float SOFTPLUS_THRESHOLD4 = 20.f / SOFTPLUS_BETA4;
 static constexpr float SOFTPLUS_MINUS      = 1.f;
+
+template <typename T>
+__host__ __device__ T relu(T val)
+{
+    return (T)max((float)val, 0.0f);
+}
+
+template <>
+inline __host__ __device__ __half relu(__half val)
+{
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 800
+    return __hmax(val, (__half)0.0f);
+#else
+    return (__half)relu<float>((float)val);
+#endif
+}
+
+static constexpr float K_ACT = 10.0f;
 
 template <typename T, typename fragment_t>
 __host__ __device__ void warp_activation(Activation activation, const fragment_t& frag, fragment_t& result)
@@ -86,7 +103,14 @@ __host__ __device__ void warp_activation(Activation activation, const fragment_t
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
             {
-                result.x[t] = frag.x[t] * (T)((T)frag.x[t] > (T)0.0f);
+                result.x[t] = relu((T)frag.x[t]);
+            }
+            return;
+        case Activation::LeakyReLU:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                result.x[t] = frag.x[t] * (T)((T)frag.x[t] > (T)0.0f ? 1.0f : 0.01f);
             }
             return;
         case Activation::Exponential:
@@ -116,6 +140,20 @@ __host__ __device__ void warp_activation(Activation activation, const fragment_t
             {
                 float x     = (float)frag.x[t] * K_ACT;
                 result.x[t] = (T)(0.5f * (x + sqrtf(x * x + 4)) / K_ACT);
+            }
+            return;
+        case Activation::Softplus:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                result.x[t] = (T)(logf(expf((float)frag.x[t] * K_ACT) + 1.0f) / K_ACT);
+            }
+            return;
+        case Activation::Tanh:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                result.x[t] = (T)(tanhf((float)frag.x[t]));
             }
             return;
         case Activation::Softplus2:
@@ -202,6 +240,13 @@ __host__ __device__ void warp_activation_backward_in(Activation activation, cons
                 result.x[t] = frag.x[t] * (T)(forward_frag_in.x[t] > (T)0.0f);
             }
             return;
+        case Activation::LeakyReLU:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                result.x[t] = frag.x[t] * (T)(forward_frag_in.x[t] > (T)0.0f ? 1.0f : 0.01f);
+            }
+            return;
         case Activation::Exponential:
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
@@ -231,6 +276,22 @@ __host__ __device__ void warp_activation_backward_in(Activation activation, cons
                 float x     = (float)forward_frag_in.x[t] * K_ACT;
                 float y     = 0.5f * (x + sqrtf(x * x + 4));
                 result.x[t] = frag.x[t] * (T)(y * y / (y * y + 1));
+            }
+            return;
+        case Activation::Softplus:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                float tmp   = expf((float)forward_frag_in.x[t] * K_ACT);
+                result.x[t] = frag.x[t] * (T)(tmp / (tmp + 1));
+            }
+            return;
+        case Activation::Tanh:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                float x     = tanhf(forward_frag_in.x[t]);
+                result.x[t] = frag.x[t] * (T)(1.0f - x * x);
             }
             return;
         case Activation::Softplus2:
@@ -349,6 +410,13 @@ __host__ __device__ void warp_activation_backward(Activation activation, const f
                 result.x[t] = frag.x[t] * (T)(forward_frag.x[t] > (T)0.0f);
             }
             return;
+        case Activation::LeakyReLU:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                result.x[t] = frag.x[t] * (T)(forward_frag.x[t] > (T)0.0f ? 1.0f : 0.01f);
+            }
+            return;
         case Activation::Exponential:
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
@@ -365,7 +433,7 @@ __host__ __device__ void warp_activation_backward(Activation activation, const f
             TCNN_PRAGMA_UNROLL
             for (int t = 0; t < result.num_elements; t++)
             {
-                result.x[t] = frag.x[t] * (T)(forward_frag.x[t] * ((T)1.0f - forward_frag.x[t]));
+                result.x[t] = frag.x[t] * (T)(forward_frag.x[t] * (T)(1.0f - (float)forward_frag.x[t]));
             }
             return;
         case Activation::Squareplus:
@@ -374,6 +442,20 @@ __host__ __device__ void warp_activation_backward(Activation activation, const f
             {
                 float y     = (float)forward_frag.x[t] * K_ACT;
                 result.x[t] = frag.x[t] * (T)(y * y / (y * y + 1));
+            }
+            return;
+        case Activation::Softplus:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                result.x[t] = frag.x[t] * (T)(1.0f - expf(-(float)forward_frag.x[t] * K_ACT));
+            }
+            return;
+        case Activation::Tanh:
+            TCNN_PRAGMA_UNROLL
+            for (int t = 0; t < result.num_elements; t++)
+            {
+                result.x[t] = frag.x[t] * (T)(1.0f - ((float)forward_frag.x[t] * (float)forward_frag.x[t]));
             }
             return;
         case Activation::Softplus2:
