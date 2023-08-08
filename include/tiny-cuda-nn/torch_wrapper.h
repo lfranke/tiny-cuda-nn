@@ -85,7 +85,6 @@ class TorchTcnnWrapperModule
         CHECK_THROW(params.scalar_type() == c10_param_precision());
 
         // Sizes
-        std::cout << input.size(1) << " -- " << n_input_dims() << std::endl;
         CHECK_THROW(input.size(1) == n_input_dims());
         CHECK_THROW(params.size(0) == n_params());
 
@@ -372,6 +371,7 @@ class TcnnTorchModuleImpl : public torch::nn::Module
 
     torch::Tensor forward(torch::Tensor x)
     {
+        CHECK(x.is_cuda() == true);
         auto info_unq    = std::make_unique<TnnInfo>();
         info_unq->module = &module;
         c10::intrusive_ptr<TnnInfo> info_ptr(std::move(info_unq));

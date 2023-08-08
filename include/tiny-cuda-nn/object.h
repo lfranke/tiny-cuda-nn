@@ -199,7 +199,6 @@ class DifferentiableObject : public ParametricObject<PARAMS_T>
     {
         CHECK_THROW(input.m() == input_width());
         CHECK_THROW(!output || output->m() == padded_output_width());
-        std::cout << input.n() << " xxx " << batch_size_granularity << std::endl;
         CHECK_THROW(input.n() % batch_size_granularity == 0);
         CHECK_THROW(!output || input.n() == output->n());
 

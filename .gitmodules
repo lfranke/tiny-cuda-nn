@@ -4,3 +4,5 @@
 [submodule "dependencies/fmt"]
 	path = dependencies/fmt
 	url = https://github.com/fmtlib/fmt
+[submodule "External/tiny-cuda-nn"]
+	url = git@github.com:lfranke/tiny-cuda-nn.git
